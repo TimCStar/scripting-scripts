@@ -1,0 +1,18 @@
+{
+  "README.md": {
+    "bytes": 13339,
+    "sha256": "dece64a7e63f8196cd4d6c39ab87ddb814726dbc839ae9d06e53b9ac096f0d4b"
+  },
+  "VERIFICATION.md": {
+    "bytes": 1743,
+    "sha256": "f9123c5df98eea6f4f074bd80cbacdf6a5847e8505c19cd54035b9725ea6dc65"
+  },
+  "Sub2API-Monitor.scripting": {
+    "bytes": 28013,
+    "sha256": "e4bdd34e384e4d59651b9c259442d079934d54410dd6fef0cfa7e3b8c07d149e"
+  },
+  "Sub2API-Monitor-source.zip": {
+    "bytes": 64726,
+    "sha256": "b8e494659720975a5767d7579923e83de7c3eadf3ff8935dcc63f2257ae7bfd6"
+  }
+}
