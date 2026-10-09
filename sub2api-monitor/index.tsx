@@ -1,8 +1,9 @@
 import { Navigation, NavigationStack, Form, Section, TextField, SecureField, Button, Text, Script, Widget, Picker, useState, fetch } from 'scripting'
-import { normalizeBaseURL, parseIDs, parseReferenceCaps, type Config } from './model'
+import { normalizeBaseURL, parseIDs, type Config } from './model'
 import { loadAccounts, type Auth } from './client'
 import { readConfig, CONFIG_KEY, AUTH_KEY, CACHE_KEY } from './state'
 import {ResetPanel} from './reset-panel'
+import {parseDisplayNames} from './display'
 
 function Setup() {
   const initial = readConfig()
@@ -11,10 +12,12 @@ function Setup() {
   const [ids,setIDs] = useState(initial.accountIDs.join(','))
   const [kind,setKind] = useState<'apiKey'|'jwt'>('apiKey')
   const [token,setToken] = useState('')
-  const [caps,setCaps] = useState(JSON.stringify(initial.referenceCaps || {}))
+  const [names,setNames] = useState<Record<string,string>>(initial.displayNames || {})
+  const [fiveHour,setFiveHour] = useState<Record<string,'auto'|'show'|'hide'>>(initial.fiveHourVisibility || {})
+  const editorIDs=ids.trim().split(/[,，\s]+/).filter((id,i,all)=>/^[1-9]\d*$/.test(id)&&Number.isSafeInteger(Number(id))&&all.indexOf(id)===i).slice(0,12)
   const [message,setMessage] = useState('凭证仅写入本机钥匙串。空白表示保留现有凭证。')
   const [busy,setBusy] = useState(false)
-  function config():Config {return {version:1,baseURL:normalizeBaseURL(url),accountIDs:parseIDs(ids),demo:false,refreshMinutes:20,staleMinutes:60,referenceCaps:parseReferenceCaps(caps),revision:String(Date.now())}}
+  function config():Config {return {version:1,baseURL:normalizeBaseURL(url),accountIDs:parseIDs(ids),demo:false,refreshMinutes:20,staleMinutes:60,displayNames:parseDisplayNames(JSON.stringify(Object.fromEntries(Object.entries(names).filter(([id,name])=>editorIDs.includes(id)&&name.trim())))),fiveHourVisibility:fiveHour,revision:String(Date.now())}}
   function auth():Auth {
     if (token.trim()) return {kind,token:token.trim()}
     const saved = Keychain.get(AUTH_KEY)
@@ -36,9 +39,15 @@ function Setup() {
       <SecureField title="管理凭证（留空保留）" value={token} onChanged={setToken}/>
       <Text>需要管理员权限；普通下游 API Key 不适用。不要把凭证放进脚本或小组件参数。</Text>
     </Section>
-    <Section header={<Text>高级可选：手动参考额度（USD）</Text>}>
-      <TextField title="JSON 参考值" value={caps} onChanged={setCaps}/>
-      <Text>{'例如 {"101":{"fiveHour":25,"sevenDay":150}}。仅以手动参考额度 × 原生剩余比例估算，不是平台承诺的真实美元限额。留 {} 关闭。'}</Text>
+    {editorIDs.map(id=><Section key={id} header={<Text>账号 #{id}</Text>}>
+        <TextField title="显示名称（留空使用服务器名称）" value={names[id]||''} onChanged={value=>setNames({...names,[id]:value})}/>
+        <Picker title="5h 显示" value={fiveHour[id]||'auto'} onChanged={value=>{if(value==='auto'||value==='show'||value==='hide')setFiveHour({...fiveHour,[id]:value})}}>
+          <Text tag="auto">自动（有快照时显示）</Text><Text tag="show">显示</Text><Text tag="hide">隐藏</Text>
+        </Picker>
+    </Section>)}
+    <Section header={<Text>显示说明</Text>}>
+      <Text>名称与显示设置仅保存在本机。你的账号没有 5h 限制时可选择隐藏；真实 0% 不会显示成告警。</Text>
+      <Text>7d 下方显示窗口已用美元 / 估算总美元；按服务器记录计算当前 7d 窗口，并结合额度比例，不使用手动参考额度。缺失的数据会显示为 —。</Text>
     </Section>
     <Section header={<Text>保存与验证</Text>}>
       <Button title={busy ? '正在读取…' : '测试连接（只读）'} action={async()=>{
@@ -60,7 +69,7 @@ function Setup() {
       <Button title="小号 · 单账号" action={()=>preview('systemSmall')}/>
       <Button title="中号 · 可选 1–2 个" action={()=>preview('systemMedium')}/>
       <Button title="大号 · 可选 1–4 个" action={()=>preview('systemLarge')}/>
-      <Text>系统决定实际刷新时间。默认申请约 20 分钟后刷新；超过 60 分钟的上游快照会标为旧数据。GPT / Claude 仅使用已有快照，不会发送模型请求。</Text>
+      <Text>系统决定实际刷新时间。默认申请约 20 分钟后刷新；过期快照会用中性文字提示，不会把 0% 当作告警。GPT / Claude 仅使用已有快照，不会发送模型请求。</Text>
     </Section>
   </Form></NavigationStack>
 }

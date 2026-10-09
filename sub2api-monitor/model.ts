@@ -1,15 +1,15 @@
 /** Pure data layer. Never retain server objects or credentials in a model/cache. */
 export type Provider = 'openai' | 'anthropic' | 'antigravity' | 'other'
-export type Window = { label: string; percent: number | null; resetsAt: string | null; updatedAt: string | null; detail?: string }
+export type Window = { label: string; percent: number | null; resetsAt: string | null; updatedAt: string | null; detail?: string; usedUSD?: number | null; estimatedTotalUSD?: number | null; costStatus?: 'complete' | 'unavailable' | 'truncated' }
 export type AccountView = {
   id: number; name: string; provider: Provider; groups: string[]; status: string;
   windows: Window[]; todayCost: number | null; todayTokens: number | null; todayRequests?: number | null;
   resetCredits?: {available:number|null;expiresAt:string|null;automatic:boolean|null;state:string|null;stateAt:string|null};
   estimate: string; fetchedAt: string; error?: string
 }
-export type Config = { version: 1; baseURL: string; accountIDs: number[]; demo: boolean; refreshMinutes: number; staleMinutes: number; revision?:string; referenceCaps?: Record<string, {fiveHour?:number;sevenDay?:number}> }
+export type Config = { version: 1; baseURL: string; accountIDs: number[]; demo: boolean; refreshMinutes: number; staleMinutes: number; revision?:string; displayNames?:Record<string,string>; fiveHourVisibility?:Record<string,'auto'|'show'|'hide'>; referenceCaps?: Record<string, {fiveHour?:number;sevenDay?:number}> }
 export const DEFAULT_CONFIG: Config = { version: 1, baseURL: '', accountIDs: [], demo: true, refreshMinutes: 20, staleMinutes: 60 }
-export const CACHE_VERSION = 1
+export const CACHE_VERSION = 2
 export function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
@@ -100,12 +100,16 @@ export function normalizeAccount(raw: unknown, stats: unknown, groupNames: Recor
     { label: '5h', percent: fraction(e.session_window_utilization), resetsAt: iso(a.session_window_end), updatedAt: sampled },
     { label: '7d', percent: fraction(e.passive_usage_7d_utilization), resetsAt: unix(e.passive_usage_7d_reset), updatedAt: sampled }
   ] : []
+  // An absent provider window is not measured zero or proof of unlimited usage.
+  if (provider === 'openai' || provider === 'anthropic') {
+    for (let i = windows.length - 1; i >= 0; i--) if (windows[i].percent === null && !windows[i].resetsAt) windows.splice(i, 1)
+  }
   return {
     id: nonnegative(a.id) ?? 0, name: safeText(a.name, '未命名账号', 40), provider,
     groups: Array.isArray(a.group_ids) ? a.group_ids.filter(x => Number.isSafeInteger(x)).map(x => groupNames[String(x)] || `分组 #${x}`).slice(0, 3) : [],
     status: safeText(a.status,'未知',20), windows, todayCost: nonnegative(s.cost), todayTokens: nonnegative(s.tokens), todayRequests:nonnegative(s.requests),
     ...(provider==='openai'&&a.parent_account_id==null?{resetCredits:resetCreditView(e,now)}:{}),
-    estimate: '剩余比例由原生已用百分比估算；绝对额度未提供', fetchedAt: new Date(now).toISOString()
+    estimate: '7d 已使用为本实例窗口费用；总额度按使用率自动估算', fetchedAt: new Date(now).toISOString()
   }
 }
 export function validateConfig(value: unknown): Config {
@@ -114,16 +118,16 @@ export function validateConfig(value: unknown): Config {
   if (v.demo === true) return { ...DEFAULT_CONFIG }
   const baseURL = normalizeBaseURL(String(v.baseURL || ''))
   const accountIDs = parseIDs(Array.isArray(v.accountIDs) ? v.accountIDs.join(',') : '')
-  return {version:1,baseURL,accountIDs,demo:false,refreshMinutes:20,staleMinutes:60,revision:typeof v.revision==='string'?v.revision:'0',referenceCaps:parseReferenceCaps(JSON.stringify(v.referenceCaps || {}))}
+  return {version:1,baseURL,accountIDs,demo:false,refreshMinutes:20,staleMinutes:60,revision:typeof v.revision==='string'?v.revision:'0',displayNames:validatedDisplayNames(v.displayNames),fiveHourVisibility:validatedFiveHourVisibility(v.fiveHourVisibility)}
 }
 export function makeDemo(now = Date.now()): AccountView[] {
   const sample = new Date(now - 5 * 60_000).toISOString()
   return [
-    {id:101,name:'工作 · GPT Pro',platform:'openai',group_ids:[1],status:'active',extra:{codex_reset_credit_snapshot:{available_count:2,credits:[{expires_at:new Date(now+5*86400_000).toISOString()},{expires_at:new Date(now+9*86400_000).toISOString()}]},codex_auto_reset_credit_state:{status:'available',checked_at:sample},codex_5h_used_percent:37,codex_7d_used_percent:62,codex_5h_reset_at:new Date(now+118*60_000).toISOString(),codex_7d_reset_at:new Date(now+3*86400_000).toISOString(),codex_usage_updated_at:sample}},
-    {id:102,name:'日常 · Claude Max',platform:'anthropic',group_ids:[2],status:'active',session_window_end:new Date(now+74*60_000).toISOString(),extra:{session_window_utilization:.71,passive_usage_7d_utilization:.43,passive_usage_7d_reset:(now+2*86400_000)/1000,passive_usage_sampled_at:sample}},
-    {id:103,name:'实验 · Antigravity',platform:'antigravity',group_ids:[3],status:'active',extra:{}},
-    {id:104,name:'备用 · GPT',platform:'openai',group_ids:[1],status:'active',extra:{codex_5h_used_percent:12,codex_7d_used_percent:25,codex_5h_reset_at:new Date(now+202*60_000).toISOString(),codex_7d_reset_at:new Date(now+5*86400_000).toISOString(),codex_usage_updated_at:sample}}
-  ].map((a,i)=>normalizeAccount(a,{cost:[1.82,3.46,.58,.19][i],tokens:[182400,341200,64000,21400][i],requests:[84,127,42,11][i]},{'1':'开发','2':'写作','3':'研究'},now))
+    {id:101,name:'工作主号',platform:'openai',group_ids:[1],status:'active',extra:{codex_reset_credit_snapshot:{available_count:2,credits:[{expires_at:new Date(now+5*86400_000).toISOString()},{expires_at:new Date(now+9*86400_000).toISOString()}]},codex_auto_reset_credit_state:{status:'available',checked_at:sample},codex_7d_used_percent:62,codex_7d_reset_at:new Date(now+3*86400_000).toISOString(),codex_usage_updated_at:sample}},
+    {id:102,name:'日常写作',platform:'anthropic',group_ids:[2],status:'active',session_window_end:new Date(now+74*60_000).toISOString(),extra:{session_window_utilization:.71,passive_usage_7d_utilization:.43,passive_usage_7d_reset:(now+2*86400_000)/1000,passive_usage_sampled_at:sample}},
+    {id:103,name:'实验账号',platform:'antigravity',group_ids:[3],status:'active',extra:{}},
+    {id:104,name:'备用账号',platform:'openai',group_ids:[1],status:'active',extra:{codex_5h_used_percent:12,codex_7d_used_percent:25,codex_5h_reset_at:new Date(now+202*60_000).toISOString(),codex_7d_reset_at:new Date(now+5*86400_000).toISOString(),codex_usage_updated_at:sample}}
+  ].map((a,i)=>normalizeAccount(a,{cost:[1.82,3.46,.58,.19][i],tokens:[182400,341200,64000,21400][i],requests:[84,127,42,11][i]},{'1':'开发','2':'写作','3':'研究'},now)).map((a,i)=>{ for(const w of a.windows) if(w.label==='7d'&&a.provider==='openai') Object.assign(w,{usedUSD:[124,0,0,30][i],estimatedTotalUSD:[200,0,0,120][i],costStatus:'complete'}); return a })
 }
 
 export function parseReferenceCaps(text: string): Record<string,{fiveHour?:number;sevenDay?:number}> {
@@ -151,7 +155,7 @@ export function validateCachedAccount(value:unknown):AccountView|null {
   const a=record(value)
   if(!Number.isSafeInteger(a.id)||Number(a.id)<=0||!['openai','anthropic','antigravity','other'].includes(String(a.provider))||!Array.isArray(a.windows)||!Array.isArray(a.groups))return null
   const windows:Window[]=[]
-  for(const entry of a.windows.slice(0,3)){const w=record(entry);if(typeof w.label!=='string'||(w.percent!==null&&nonnegative(w.percent)===null))return null;windows.push({label:safeText(w.label,'?',10),percent:nonnegative(w.percent),resetsAt:iso(w.resetsAt),updatedAt:iso(w.updatedAt)})}
+  for(const entry of a.windows.slice(0,3)){const w=record(entry);if(typeof w.label!=='string'||(w.percent!==null&&nonnegative(w.percent)===null))return null;windows.push({label:safeText(w.label,'?',10),percent:nonnegative(w.percent),resetsAt:iso(w.resetsAt),updatedAt:iso(w.updatedAt),...(w.costStatus==='complete'?{usedUSD:nonnegative(w.usedUSD),estimatedTotalUSD:nonnegative(w.estimatedTotalUSD),costStatus:'complete' as const}:w.costStatus==='truncated'||w.costStatus==='unavailable'?{usedUSD:null,estimatedTotalUSD:null,costStatus:w.costStatus}:{} )})}
   return {id:Number(a.id),name:safeText(a.name,'未命名账号',40),provider:a.provider as Provider,groups:a.groups.map(x=>safeText(x,'',30)).filter(Boolean).slice(0,3),status:safeText(a.status,'未知',20),windows,todayCost:nonnegative(a.todayCost),todayTokens:nonnegative(a.todayTokens),todayRequests:nonnegative(a.todayRequests),...(a.provider==='openai'&&a.resetCredits?{resetCredits:{available:nonnegative(record(a.resetCredits).available),expiresAt:iso(record(a.resetCredits).expiresAt),automatic:typeof record(a.resetCredits).automatic==='boolean'?record(a.resetCredits).automatic as boolean:null,state:typeof record(a.resetCredits).state==='string'?safeText(record(a.resetCredits).state,'',10):null,stateAt:iso(record(a.resetCredits).stateAt)}}:{}),estimate:safeText(a.estimate,'额度未提供'),fetchedAt:iso(a.fetchedAt)||'',...(typeof a.error==='string'?{error:safeText(a.error,'连接失败')}:{} )}
 }
 
@@ -178,4 +182,36 @@ function resetCreditView(extra:Record<string,unknown>,now:number) {
   const available=declared===0?0:declared!==null&&expiries.length?Math.min(Math.floor(declared),expiries.length):null
   const labels:Record<string,string>={checking:'检查中',available:'可用',resetting:'处理中',success:'已成功',no_credit:'无额度',failed:'失败'}
   return {available,expiresAt:expiries[0]||null,automatic:typeof extra.auto_reset_credit_enabled==='boolean'?extra.auto_reset_credit_enabled:null,state:labels[String(state.status)]||null,stateAt:iso(state.last_result_at)||iso(state.checked_at)}
+}
+
+function validatedDisplayNames(value:unknown):Record<string,string> {
+  const result:Record<string,string>={}
+  for(const [id,name] of Object.entries(record(value)))if(/^[1-9]\d*$/.test(id)&&Number.isSafeInteger(Number(id))&&typeof name==='string'&&name.trim())result[id]=safeText(name.trim(),'账号',40)
+  return result
+}
+
+/** Same positive-only formula as AccountUsageCell.openAISevenDayEstimatedTotalCost. */
+export function estimatedTotalCost(cost:number|null, percent:number|null):number|null {
+  if(cost===null||percent===null||!Number.isFinite(cost)||!Number.isFinite(percent)||cost<=0||percent<=0)return null
+  return nonnegative(cost*100/percent)
+}
+/** Strict reset alignment; never substitute today's cost or an expired window. */
+export function sevenDayCostStart(window:Window, now=Date.now()):number|null {
+  const reset=window.resetsAt?Date.parse(window.resetsAt):NaN
+  return window.label==='7d'&&Number.isFinite(reset)&&reset>now&&reset-7*86400000<=now?reset-7*86400000:null
+}
+/** Local usage records contain sensitive extra fields. Return only a number. */
+export function accountLogCost(value:unknown,accountID:number,start:number,end:number):number|null {
+  const r=record(value),at=iso(r.created_at)
+  if(r.account_id!==accountID||!Number.isSafeInteger(r.id)||Number(r.id)<=0||!at)return null
+  const timestamp=Date.parse(at)
+  if(timestamp<start||timestamp>end)return 0
+  const base=nonnegative(r.account_stats_cost??r.total_cost), multiplier=nonnegative(r.account_rate_multiplier??1)
+  return base===null||multiplier===null?null:nonnegative(base*multiplier)
+}
+
+function validatedFiveHourVisibility(value:unknown):Record<string,'auto'|'show'|'hide'> {
+ const result:Record<string,'auto'|'show'|'hide'>={}
+ for(const [id,setting] of Object.entries(record(value)))if(/^[1-9]\d*$/.test(id)&&Number.isSafeInteger(Number(id))&&(setting==='auto'||setting==='show'||setting==='hide'))result[id]=setting
+ return result
 }
