@@ -1,9 +1,12 @@
-import { Navigation, NavigationStack, Form, Section, TextField, SecureField, Button, Text, Script, Widget, Picker, useState, fetch } from 'scripting'
+import { HStack, Navigation, NavigationStack, Form, Section, TextField, SecureField, Button, Text, Script, Widget, Picker, useState, fetch } from 'scripting'
 import { normalizeBaseURL, parseIDs, type Config } from './model'
 import { loadAccounts, type Auth } from './client'
 import { readConfig, CONFIG_KEY, AUTH_KEY, CACHE_KEY } from './state'
 import {ResetPanel} from './reset-panel'
 import {parseDisplayNames} from './display'
+import {ProviderIcon,preloadProviderIcons} from './provider-icons'
+
+const artwork=preloadProviderIcons()
 
 function Setup() {
   const initial = readConfig()
@@ -65,7 +68,9 @@ function Setup() {
       <Text>{message}</Text>
     </Section>
     <ResetPanel/>
-    <Section header={<Text>预览</Text>}>
+    <Section header={<Text>预览 · v1.1.1</Text>}>
+      <HStack spacing={16}>{(['openai','anthropic','antigravity'] as const).map(provider=><ProviderIcon key={provider} provider={provider} size={28} images={artwork.images}/>)}</HStack>
+      <Text>{artwork.failed.length?'图标解码失败：'+artwork.failed.join('、')+'。请更新 Scripting 后重试。':'离线图标已解码。上方应显示 3 个真实平台标志。'}</Text>
       <Button title="小号 · 单账号" action={()=>preview('systemSmall')}/>
       <Button title="中号 · 可选 1–2 个" action={()=>preview('systemMedium')}/>
       <Button title="大号 · 可选 1–4 个" action={()=>preview('systemLarge')}/>

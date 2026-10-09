@@ -1,6 +1,6 @@
 # Bundled platform artwork
 
-Retrieved 2026-10-09. Artwork identifies the account provider; no affiliation or endorsement is implied. These are actual logo assets, not SF Symbols or redrawn approximations. All runtime images are bundled offline PNG files.
+Retrieved 2026-10-09. Artwork identifies the account provider; no affiliation or endorsement is implied. These are actual logo assets, not SF Symbols or redrawn approximations. All runtime images are bundled offline PNG files, also embedded byte-for-byte in provider-artwork.ts.
 
 ## Google Antigravity
 
@@ -22,11 +22,10 @@ LobeHub library code/assets are supplied under the included MIT notice (LOBE-ICO
 ## Rendering and native API
 
 Runtime PNG output: 128×128 RGBA, with a maximum 120px drawing dimension and transparent padding. Rendered with Inkscape, then cropped/resized uniformly with Pillow. No image-generation model or hand-drawn approximation was used. Actual outputs were visually inspected on light and dark backgrounds.
-Scripting uses Image.filePath with dynamic light/dark paths, Script.directory and global Path.join:
+Version 1.1.1 synchronously decodes the embedded PNG bytes with global UIImage.fromBase64String before Widget.present, then passes checked light/dark UIImage objects to Image.image. UIImage.fromFile is a fallback for the same artwork, not the main runtime path. Images use renderingMode="original" and widgetAccentedRenderingMode="fullColor". The previous Image.filePath implementation is documented as supported; native device failures were not reproduced here.
 https://scriptingapp.github.io/guide/Views/Image/
-https://scriptingapp.github.io/guide/Views/Image/index_example
-UIImage.fromFile is also documented but is unnecessary:
 https://scriptingapp.github.io/guide/Utilities/UIImage
+https://scriptingapp.github.io/guide/Widget/Tinted%20Mode%20Adaptation%20Guide
 This validates the documented API, not an on-device execution.
 
 ## SHA-256 of runtime PNGs

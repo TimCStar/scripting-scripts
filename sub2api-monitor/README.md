@@ -1,8 +1,8 @@
 # Sub2API 用量看板 · iOS Scripting
 
-一个不依赖第三方中转服务的中文主屏幕小组件与手动重置面板。GPT 用低饱和绿、Claude 用暖橙、Antigravity 用蓝紫；适配浅色/深色。默认首先显示标明「演示 · 虚构数据」的示例，不会联网。
+一个不依赖第三方中转服务的中文主屏幕小组件与手动重置面板。单一整面背景、文字和进度条使用黑白灰，适配浅色/深色；只有真实品牌图标保留原始颜色。默认首先显示标明「演示 · 虚构数据」的示例，不会联网。
 
-版本：1.1.0。小组件只保留真实平台图标、账号显示名称和额度；不显示平台文字、标题、采样时间、ID、分组或今日统计。
+版本：1.1.1。小组件只保留真实平台图标、账号显示名称和额度；不显示平台文字、标题、采样时间、ID、分组或今日统计。
 
 ## 安装与配置
 
@@ -18,12 +18,20 @@
 
 导入新包可能创建新的脚本项目。凭证及设置按脚本作用域保存，不能保证跨新项目保留；若创建新项目，请重新填写服务器、账号 ID 与凭证。请勿先删除旧项目；删除脚本可能删除其钥匙串项。安装包不包含个人设置或凭证。
 
+### 1.1.1 显示修正与确认
+
+- 根容器使用官方示例的 `frame={Widget.displaySize}`，按实际宿主尺寸铺满整面背景；无内层卡片色块。外层不设 padding，内容间距独立放在内层（小号 14pt，其他 12pt）。没有硬编码某款 iPhone 的尺寸，也没有调用未文档化的 widget 边距开关。
+- 每个显示的额度窗口都显示绝对重置时间，格式 `M/D HH:mm`，采用设备本地时间。仅显示时间，不加「下次重置」说明；未知显示 `—`，不会因小号或紧凑布局隐藏。
+- 图标先从 `provider-artwork.ts` 内嵌的原始 PNG 字节同步解码为 `UIImage`，完成后才调用 `Widget.present`；无需等待图片视图读取路径。如果解码失败，才尝试相同的本地 PNG 文件。两种模式都成功才传给 `Image.image`，不以假图标代替。
+- 配置页「预览 · v1.1.1」显示版本、3 个图标及解码结果。版本与诊断不放进小组件。更新后先确认版本，再检查三种尺寸的实际主屏幕显示；新建了脚本项目时需把小组件重新指向新项目。
+- 旧版的 `Image.filePath` 写法本身属于官方支持 API；本次修改去除对运行时资源路径的依赖，并不能证明设备上缺图只有这一种原因。尚未在真实 iPhone 复测黑边与图标问题。
+
 ### 自适应信息密度
 
 - 小号 1 个账号；中号 1 个账号时放大双栏，2 个账号时并排紧凑卡。
 - 大号 1 个账号时放大，2 个账号时双扩展卡，3–4 个账号时紧凑多行。
 - 每张卡只显示离线真实平台图标、账号别名和额度。窗口进度下方的 7d 金额是「已用 USD / 估算总 USD」；小组件不堆叠解释文字。
-- 有空间时显示相对重置倒计时和缓存重置券，以及打开应用确认面板的「重置…」。链接本身不会提交重置。演示账号不能执行重置。
+- 每个窗口始终显示绝对重置时间。有空间时另显示缓存重置券，以及打开应用确认面板的「重置…」。链接本身不会提交重置。演示账号不能执行重置。
 - 自定义名称及 5h 显示选择仅保存本机，不修改服务器账号。显示名称最长 40 字；短别名更适合紧凑布局。
 
 ## 看板里每个数字的含义
@@ -35,7 +43,7 @@
 - **未知金额**：比例/费用为 0 时无法反推总额，总额显示 `—`；窗口、记录、时区、刷新状态或分页完整性无法确认时不伪造金额。首日超过 2,000 条记录会保守显示未知。比例快照旧时保留可核验的窗口已用费用，但不反推总额；已过期窗口不显示美元值。
 - **Claude / Antigravity**：Claude 显示原生百分比；只有能确认 7d 重置点及完整本地费用时才显示相应金额。Antigravity 没有可安全读取的持久化额度快照时显示「暂无额度快照」，不把按模型余额包装成 5h/7d。
 - **旧快照**：只用中性文字表示旧数据或待更新，0% 和旧快照本身不触发黄色/红色警告。真实连接或账号异常另行提示。没有采样时间标签，也没有顶部刷新时间。
-- **平台图标**：使用随包携带的真实品牌 PNG，离线读取，适配浅/深背景。来源、商标说明和第三方图标代码许可证见 `assets/ATTRIBUTION.md`；不使用 SF Symbols 替代品牌标志。
+- **平台图标**：使用随包携带并内嵌于源码的真实品牌 PNG，先离线解码，适配浅/深背景。来源、商标说明和第三方图标代码许可证见 `assets/ATTRIBUTION.md`；不使用 SF Symbols 替代品牌标志。
 
 账号之间的百分比不会相加，多分组账号不会重复计费。旧版手动参考额度不再用于显示。
 
@@ -78,21 +86,26 @@
 
 已依据 **Wei-Shaw/sub2api v0.2.15，commit `3a6fd1c9db07203ca308aaba69e502bc1f35b307`（2026-10-09）** 验证字段。兼容部署差异时采用「未提供」，不虚构数据。旧版没有当前 canonical Codex 字段时不推测 legacy primary/secondary 的意义。未配置或未观察到快照时，可通过正常业务使用让服务端自然采样，再等系统刷新；脚本不会主动制造使用量。
 
-小组件的着色/强调模式可能由 iOS 覆盖背景和颜色。支持 standard systemSmall / systemMedium / systemLarge，锁屏/accessory family 未作适配。
+小组件的着色/强调模式由 iOS 管理：根背景使用 `widgetBackground`，会在该模式隐藏；图标设置 `widgetAccentedRenderingMode="fullColor"` 保留真实颜色。支持 standard systemSmall / systemMedium / systemLarge，锁屏/accessory family 未作适配。
 
 ## 验证记录与限制
 
 - 已运行 Node 24 原生 TypeScript 去类型化下的纯数据与模拟网络测试：HTTPS 校验、ID 顺序、0/未知/超额、窗口时长、相对重置锚点、Claude 比例、缓存字段白名单、Antigravity 不支持、自动窗口金额估算与不完整分页降级、重定向拒绝、401 保留缓存、统计部分失败、账号错配、自适应账号选择、手动重置防重复、未确认/不匹配/过期时拒绝、超时不重试、部分成功、收据失败等。
-- TypeScript 5.9.3 严格检查纯数据层 `model.ts` / `client.ts` / `operations.ts` / `display.ts`，并对全部 TS/TSX 做语法转译检查；不使用伪造的 Scripting 类型声明冒充 API 类型检查。
+- TypeScript 5.9.3 严格检查纯数据层 `model.ts` / `client.ts` / `operations.ts` / `display.ts` / `provider-images.ts` / `provider-artwork.ts`，并对全部 TS/TSX 做语法转译检查；不使用伪造的 Scripting 类型声明冒充 API 类型检查。
+- 67 个纯逻辑/模拟网络/图标测试通过，另有 13 个模拟 Scripting 桥接的 TSX 视图树检查，覆盖全部账号数量、图标回退/失败、错误状态及双窗口旧快照的紧凑布局。视图树检查不测量 SwiftUI 像素，不是设备渲染验证。
 - Scripting 组件/API 对照官方文档审查；安装格式对照官方 `.scripting` ZIP 示例。
 - **未在真实 iPhone / Scripting 运行测试，未连接真实 Sub2API 服务器，未获得当前设备同步的官方 `scripting.d.ts` 做 API 类型检查。** 模拟测试通过不代表 iOS 布局已经设备验证。可在 app 预览三种尺寸，若账号名较长，可改为短别名或减少显示账号数量。
 
-开发者运行：`npm test`（Node 22.6+，推荐 Node 24）。没有 npm 运行时依赖。可选 `npm install` 后执行 `npm run typecheck:core` 与 `npm run check:syntax`；TypeScript 仅为开发依赖。测试会在临时目录复制纯数据模块并调整本地扩展名，不改发布源码。
+开发者运行：`npm test`（Node 22.6+，推荐 Node 24）。没有 npm 运行时依赖。可选 `npm install` 后执行 `npm run typecheck:core` 、`npm run check:syntax` 与 `npm run check:render`；TypeScript 仅为开发依赖。测试会在临时目录复制纯数据模块并调整本地扩展名，不改发布源码。
 
 ### 官方参考
 
 - [Sub2API 固定版本源码](https://github.com/Wei-Shaw/sub2api/tree/3a6fd1c9db07203ca308aaba69e502bc1f35b307)
 - [Scripting Widget API](https://scriptingapp.github.io/guide/Widget/Widget%20API)
+- [Scripting UIImage](https://scriptingapp.github.io/guide/Utilities/UIImage)
+- [Scripting Image](https://scriptingapp.github.io/guide/Views/Image/)
+- [Scripting frame](https://scriptingapp.github.io/guide/View%20Modifiers/frame)
+- [Scripting 着色模式](https://scriptingapp.github.io/guide/Widget/Tinted%20Mode%20Adaptation%20Guide)
 - [Scripting Keychain](https://scriptingapp.github.io/guide/Device%20Capabilities/Keychain)
 - [Scripting fetch](https://scriptingapp.github.io/guide/Utilities/Request/fetch)
 - [Scripting 官方打包示例](https://github.com/ScriptingApp/Community-Scripts/blob/main/Widget%20Animation%20Demo.scripting)

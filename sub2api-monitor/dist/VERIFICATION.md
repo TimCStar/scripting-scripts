@@ -1,12 +1,12 @@
 # 验证记录
 
-版本：1.1.0。日期：2026-10-09。测试全部使用虚构账号和模拟网络；没有连接真实 Sub2API，没有实际调用重置。
+版本：1.1.1。日期：2026-10-09。测试全部使用虚构账号和模拟网络；没有连接真实 Sub2API，没有实际调用重置。
 
-- Node 24：59 个测试全部通过。
-- TypeScript 5.9.3：`model.ts`、`client.ts`、`operations.ts`、`display.ts` 严格类型检查通过。
-- 全部 9 个 `.ts` / `.tsx` 文件的 TypeScript 语法转译检查通过。
+- Node 24：67 个测试全部通过。
+- TypeScript 5.9.3：`model.ts`、`client.ts`、`operations.ts`、`display.ts`、`provider-images.ts`、`provider-artwork.ts` 严格类型检查通过。
+- 全部 11 个 `.ts` / `.tsx` 文件的 TypeScript 语法转译检查通过。
 - Scripting 组件、网络、Keychain、Storage、Dialog、Link 与脚本入口对照官方文档检查。
-- `.scripting` 为 ZIP，所有脚本入口位于根目录；打包后校验 CRC 和必须文件。
+- `.scripting` ZIP 根目录包含全部 11 个运行时 `.ts` / `.tsx` 文件、manifest、说明与完整 assets；源码包另外包含测试。两个包重新打包后校验 CRC、必须文件与源码逐字节一致性。
 - 静态布局检查覆盖小号单账号、中号 1 / 2 个、大号 1 / 2 / 3 / 4 个。字体、间距已针对紧凑尺寸收缩，但不是设备截图测试。
 - 来源 Sub2API v0.2.15，固定提交 `3a6fd1c9db07203ca308aaba69e502bc1f35b307`。
 
@@ -16,11 +16,18 @@
 
 新增覆盖：真实 0 与缺失窗口、每账号本机别名/5h 显示、自动 7d 起点/完整日期与边界日志汇总、账号费用倍率、截断/重复分页降级、过期美元隐藏、旧比例只显示已用美元、缓存 schema 升级、去除冗余 widget 文本。真实品牌 PNG 已离线打包并核查图像，来源见 assets/ATTRIBUTION.md。
 
+1.1.1 新增验证：内嵌 Base64 与 6 个原始 PNG 字节完全一致；同步解码优先且不依赖文件路径；空值/异常回退；两种来源均失败时记录诊断、不传 null Image、不生成替代标志；根容器实际宿主全尺寸、中性颜色与无标签绝对时间检查。13 个 TypeScript 转译后模拟桥接执行的视图树检查覆盖小号 1、中号 1/2、大号 1/2/3/4、文件回退、解码失败、无账号错误状态，以及小号/中号双账号/大号四账号的双窗口旧快照，并检查所有图片在 Widget.present 前解码、每个额度窗口在所有尺寸始终包含绝对重置时间。这些测试不能证实原生 UIImage 解码、SwiftUI 尺寸或设备黑边已经修复。
+
+旧版 filePath 的动态图片写法是官方文档支持的，未证实为设备缺图的唯一原因。新实现使用文档明确支持的 UIImage.fromBase64String + Image.image 消除资源路径依赖。官方 Widget API 未找到 contentMarginsDisabled；没有编造此开关或声称修改了宿主系统边距。使用官方示例的 frame={Widget.displaySize} 无 padding 背景外层和单独内容内边距，移除内部卡片背景色块。
+
+设备复测清单（尚未执行）：配置页显示「预览 · v1.1.1」与三个标志；小/中/大号所有账号数量；浅色、深色与 iOS 着色模式；短账号和仅 7d；所有窗口只显示 M/D HH:mm 时间而无说明标签；确认外层背景铺满；所有 Logo 可见。只用演示数据检查，不消耗重置券。
+
 开发复现：
 
     npm test
     npm install
     npm run typecheck:core
     npm run check:syntax
+    npm run check:render
 
-`npm test` 不需要安装运行时依赖；后两项需要开发依赖 TypeScript。测试程序仅操作自身临时目录和虚构数据。
+`npm test` 不需要安装运行时依赖；后面三项需要开发依赖 TypeScript。测试程序仅操作自身临时目录和虚构数据。

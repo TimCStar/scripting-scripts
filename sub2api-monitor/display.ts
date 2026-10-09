@@ -32,3 +32,12 @@ export function windowDollars(window:Window,config:Config,now=Date.now()):string
  if(window.costStatus!=='complete'||!window.resetsAt||Date.parse(window.resetsAt)<=now)return usageDollars(null,null)
  return usageDollars(window.usedUSD,isStale(window.updatedAt,config.staleMinutes,now)?null:window.estimatedTotalUSD)
 }
+
+/** Absolute reset date in the device's local time; no redundant explanatory label. */
+export function resetTime(at:string|null|undefined):string {
+  if(!at)return '—'
+  const date=new Date(at)
+  if(!Number.isFinite(date.getTime()))return '—'
+  const pad=(n:number)=>String(n).padStart(2,'0')
+  return `${date.getMonth()+1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}

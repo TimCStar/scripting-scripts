@@ -1,18 +1,18 @@
 {
   "README.md": {
-    "bytes": 13607,
-    "sha256": "54c4db17d5017820a8d5f658c4767ba4396122f61e552e8bd8c89608aaa6eb2b"
-  },
-  "VERIFICATION.md": {
-    "bytes": 2145,
-    "sha256": "52f25bc83559f9970adcf9d0251c325b6ad33b1d0d6fca8d5b307a30a56aeb65"
-  },
-  "Sub2API-Monitor.scripting": {
-    "bytes": 249101,
-    "sha256": "d50c7d936167f11dc17ed1aff4d76871d1ad38b3d2850bba7723c30e654239b4"
+    "bytes": 15843,
+    "sha256": "287ac1da682b038aaeb71916c520b80936e2a040e88a7887403247a326e48295"
   },
   "Sub2API-Monitor-source.zip": {
-    "bytes": 261611,
-    "sha256": "d90bb5e5fadee4c4d80c3d5b87c543f6c3db7c356eab7b58f307f670902349c0"
+    "bytes": 311205,
+    "sha256": "f5797e74b2958d5c16d1276750e960668c8718a861c304de12110c831e4c13af"
+  },
+  "Sub2API-Monitor.scripting": {
+    "bytes": 294542,
+    "sha256": "fda96714bd332126e2f7f89fd0fac0e45b39019fb3e1c12bae1a78041d70acae"
+  },
+  "VERIFICATION.md": {
+    "bytes": 3898,
+    "sha256": "866eda8ff566b76d510f5f1592f50eb3f67b72561edc813c9c523b2c964e92b9"
   }
 }

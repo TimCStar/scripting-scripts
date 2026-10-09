@@ -1,14 +1,15 @@
 import { Widget, VStack, HStack, Text, Spacer, ProgressView, Link, Script, fetch } from 'scripting'
-import { brand, barPercent, isStale, relativeReset, makeDemo, selectWidgetIDs, widgetLayout, type AccountView, type Window, type Config, type Layout } from './model'
-import {displayName,windowDollars,visibleWindows} from './display'
-import {ProviderIcon} from './provider-icons'
+import { barPercent, isStale, makeDemo, selectWidgetIDs, widgetLayout, type AccountView, type Window, type Config, type Layout } from './model'
+import {displayName,windowDollars,visibleWindows,resetTime} from './display'
+import {ProviderIcon,preloadProviderIcons,type ProviderImages} from './provider-icons'
 import { loadAccounts, type Auth } from './client'
 import { readConfig, readCache, saveCache, AUTH_KEY } from './state'
-const foreground = {light:'#243B3A',dark:'#EDF2F0'}
-const muted = {light:'#758580',dark:'#97A8A2'}
-const warning = {light:'#A35A42',dark:'#E2A18B'}
-const bg = {light:'#F5F7F4',dark:'#17201F'}
-function cardBackground(provider:string){return provider==='anthropic'?{light:'#F3EAE2',dark:'#2D2420'}:provider==='antigravity'?{light:'#EBEDF6',dark:'#222639'}:{light:'#EAF1EC',dark:'#1D2B27'}}
+// Neutral adaptive styling. Only the genuine logo artwork retains brand colors.
+const foreground = {light:'#1C1C1E',dark:'#F2F2F7'}
+const muted = {light:'#636366',dark:'#AEAEB2'}
+const warning = foreground
+const bg = {light:'#FFFFFF',dark:'#000000'}
+const meterColor = {light:'#48484A',dark:'#D1D1D6'}
 const small = Widget.family === 'systemSmall'
 const large = Widget.family === 'systemLarge'
 const now = Date.now()
@@ -17,38 +18,37 @@ function snapshotNote(w:Window,c:Config):string {
   if(w.resetsAt&&Date.parse(w.resetsAt)<=now)return '待更新'
   return isStale(w.updatedAt,c.staleMinutes,now)?'旧快照':''
 }
-function Meter({window:w,account:a,config:c,dense=false,big=false,detail=false}:{window:Window;account:AccountView;config:Config;dense?:boolean;big?:boolean;detail?:boolean}) {
-  const b=brand(a.provider),color={light:b.light,dark:b.dark}
+function Meter({window:w,config:c,dense=false,compact=false,big=false}:{window:Window;config:Config;dense?:boolean;compact?:boolean;big?:boolean}) {
   const note=snapshotNote(w,c)
-  return <VStack alignment="leading" spacing={dense?1:3} frame={{maxWidth:'infinity'}}>
+  return <VStack alignment="leading" spacing={dense||compact?1:3} frame={{maxWidth:'infinity'}}>
     <HStack spacing={3}>
-      <Text font={big?14:dense?10:11} fontWeight="semibold" foregroundStyle={muted}>{w.label}{dense&&note?` · ${note}`:''}</Text><Spacer/>
-      <Text font={big?19:dense?11:13} fontWeight="semibold" monospacedDigit foregroundStyle={w.percent===null?muted:color}>{w.percent===null?'未知':`${Math.round(w.percent)}%`}</Text>
+      <Text font={big?14:dense||compact?10:11} fontWeight="semibold" foregroundStyle={muted}>{w.label}{note?` · ${note}`:''}</Text><Spacer/>
+      <Text font={big?19:dense?11:compact?12:13} fontWeight="semibold" monospacedDigit foregroundStyle={w.percent===null?muted:meterColor}>{w.percent===null?'未知':`${Math.round(w.percent)}%`}</Text>
     </HStack>
-    {w.percent!==null?<ProgressView value={(barPercent(w.percent)??0)/100} total={1} progressViewStyle="linear" tint={color}/>:<Text font={dense?8:10} foregroundStyle={muted}>额度未提供</Text>}
-    {w.label==='7d'?<Text font={big?13:dense?9:10} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{windowDollars(w,c,now)}</Text>:null}
-    {detail?<Text font={big?11:9} foregroundStyle={muted} lineLimit={1}>{note?`${note} · `:''}{relativeReset(w.resetsAt,now)}</Text>:note&&!dense?<Text font={8} foregroundStyle={muted} lineLimit={1}>{note}</Text>:null}
+    {w.percent!==null?<ProgressView value={(barPercent(w.percent)??0)/100} total={1} progressViewStyle="linear" tint={meterColor}/>:<Text font={dense?8:10} foregroundStyle={muted}>额度未提供</Text>}
+    {w.label==='7d'?<Text font={big?13:dense||compact?9:10} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{windowDollars(w,c,now)}</Text>:null}
+    <Text font={big?12:dense||compact?8:9} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{resetTime(w.resetsAt)}</Text>
   </VStack>
 }
-function AccountCard({account:a,config:c,mode}:{account:AccountView;config:Config;mode:Layout}) {
-  const b=brand(a.provider),color={light:b.light,dark:b.dark}
+function AccountCard({account:a,config:c,mode,images}:{account:AccountView;config:Config;mode:Layout;images:ProviderImages}) {
   const windows=visibleWindows(a,c)
-  const dense=mode==='largeRows',big=mode==='largeOne'
+  const dense=mode==='largeRows',big=mode==='largeOne',compact=mode==='small'||mode==='mediumTwo'
   const roomy=big||mode==='largeTwo'||mode==='mediumOne'
   const header=<HStack spacing={dense?5:7}>
-    <ProviderIcon provider={a.provider} size={big?30:dense?17:22}/>
-    <Text font={big?21:dense?12:14} fontWeight="semibold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.75}>{displayName(a,c.displayNames)}</Text><Spacer/>
-    {roomy&&a.provider==='openai'&&a.resetCredits?<Link url={Script.createRunSingleURLScheme(Script.name,{action:'reset',accountID:String(a.id)})}><Text font={10} foregroundStyle={color}>重置…</Text></Link>:null}
+    <ProviderIcon images={images} provider={a.provider} size={big?30:dense?17:compact?20:22}/>
+    <Text font={big?21:dense?12:compact?13:14} fontWeight="semibold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.75}>{displayName(a,c.displayNames)}</Text><Spacer/>
+    {roomy&&a.provider==='openai'&&a.resetCredits?<Link url={Script.createRunSingleURLScheme(Script.name,{action:'reset',accountID:String(a.id)})}><Text font={10} foregroundStyle={foreground}>重置…</Text></Link>:null}
   </HStack>
-  const meters=windows.length?(dense||mode==='largeTwo'?<HStack alignment="top" spacing={12}>{windows.map((w,i)=><Meter key={String(i)} window={w} account={a} config={c} dense={dense} detail={mode==='largeTwo'}/>)}</HStack>:<VStack spacing={big?20:7}>{windows.map((w,i)=><Meter key={String(i)} window={w} account={a} config={c} big={big} detail={roomy}/>)}</VStack>):<Text font={big?13:10} foregroundStyle={muted} lineLimit={2}>{a.error?'暂时无法读取额度':'暂无额度快照'}</Text>
+  const meters=windows.length?(dense||mode==='largeTwo'?<HStack alignment="top" spacing={12}>{windows.map((w,i)=><Meter key={String(i)} window={w} config={c} dense={dense}/>)}</HStack>:<VStack spacing={big?20:compact?4:7}>{windows.map((w,i)=><Meter key={String(i)} window={w} config={c} compact={compact} big={big}/>)}</VStack>):<Text font={big?13:10} foregroundStyle={muted} lineLimit={2}>{a.error?'暂时无法读取额度':'暂无额度快照'}</Text>
   const status=a.error?'连接异常':a.status!=='active'&&a.status!=='未知'?'账号异常':''
   const credits=a.resetCredits
   const creditLine=credits&&credits.available!==null?<Text font={big?11:9} foregroundStyle={muted} lineLimit={1}>重置券 {credits.available} 次 · 缓存</Text>:null
-  return <VStack alignment="leading" spacing={big?18:dense?4:8} padding={dense?6:8} background={{style:cardBackground(a.provider),shape:{type:'rect',cornerRadius:12}}} frame={{maxWidth:'infinity'}}>
-    {mode==='mediumOne'?<HStack alignment="top" spacing={18}><VStack alignment="leading" spacing={10} frame={{maxWidth:'infinity'}}>{header}{creditLine}{status?<Text font={9} foregroundStyle={warning}>{status}</Text>:null}</VStack><VStack frame={{maxWidth:'infinity'}}>{meters}</VStack></HStack>:<VStack alignment="leading" spacing={big?22:dense?4:8}>{header}{meters}{roomy?creditLine:null}{status&&!dense?<Text font={9} foregroundStyle={warning}>{status}</Text>:null}</VStack>}
+  return <VStack alignment="leading" spacing={big?18:dense||compact?4:8} padding={{vertical:dense?4:2}} frame={{maxWidth:'infinity'}}>
+    {mode==='mediumOne'?<HStack alignment="top" spacing={18}><VStack alignment="leading" spacing={10} frame={{maxWidth:'infinity'}}>{header}{creditLine}{status?<Text font={9} foregroundStyle={warning}>{status}</Text>:null}</VStack><VStack frame={{maxWidth:'infinity'}}>{meters}</VStack></HStack>:<VStack alignment="leading" spacing={big?22:dense||compact?4:8}>{header}{meters}{roomy?creditLine:null}{status&&!dense?<Text font={9} foregroundStyle={warning}>{status}</Text>:null}</VStack>}
   </VStack>
 }
 async function run(){
+  const artwork=preloadProviderIcons()
   let config=readConfig(),notice='',accounts:AccountView[]=[],savedAt=''
   const rootConfig=config
   // Parameter IDs determine both selection and adaptive density, never credentials.
@@ -73,13 +73,17 @@ async function run(){
     if(accounts.some(a=>a.error))notice=notice||'部分数据未更新'
   }
   const layout=widgetLayout(Widget.family,accounts.length)
-  const view=<VStack alignment="leading" spacing={large?6:4} padding={10} widgetBackground={small&&accounts[0]?cardBackground(accounts[0].provider):bg}>
+  // Official widget samples use the actual host dimensions for full-surface backgrounds.
+  // No outer padding or inner card fill: short content must not create a colored strip.
+  const view=<VStack spacing={0} frame={Widget.displaySize} widgetBackground={bg}>
+    <VStack alignment="leading" spacing={large?10:4} padding={small?14:12} frame={{maxWidth:'infinity'}}>
     {accounts.length===0?<VStack alignment="leading" spacing={8}><Text font={15} fontWeight="semibold" foregroundStyle={foreground}>连接你的用量</Text><Text font={11} foregroundStyle={muted}>{notice||'打开脚本，配置服务器与账号。'}</Text></VStack>:
-      layout==='mediumOne'?<AccountCard account={accounts[0]} config={config} mode="mediumOne"/>:
-      large?<VStack spacing={layout==='largeOne'?12:6}>{accounts.map(a=><AccountCard key={String(a.id)} account={a} config={config} mode={layout}/>)}</VStack>:
-      small?<AccountCard account={accounts[0]} config={config} mode="small"/>:
-      <HStack alignment="top" spacing={10}>{accounts.map(a=><AccountCard key={String(a.id)} account={a} config={config} mode="mediumTwo"/>)}</HStack>}
+      layout==='mediumOne'?<AccountCard images={artwork.images} account={accounts[0]} config={config} mode="mediumOne"/>:
+      large?<VStack spacing={layout==='largeOne'?12:6}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode={layout}/>)}</VStack>:
+      small?<AccountCard images={artwork.images} account={accounts[0]} config={config} mode="small"/>:
+      <HStack alignment="top" spacing={10}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode="mediumTwo"/>)}</HStack>}
     {notice&&accounts.length?<Text font={8} foregroundStyle={muted} lineLimit={1}>{notice}</Text>:null}
+    </VStack>
   </VStack>
   Widget.present(view,{policy:'after',date:new Date(now+config.refreshMinutes*60_000)})
 }
