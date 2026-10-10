@@ -66,6 +66,21 @@ test('private asset routing respects subpath and session expiry; external URLs r
   assert.equal(request.url, 'https://example.test/sub/api/app/assets/a')
   assert.equal(request.headers.Cookie, 'renewlet_session=session-test')
   assert.equal(
+    icons.logoRequest(c, 'https://example.test/sub/api/app/assets/a', auth)
+      .headers.Cookie,
+    'renewlet_session=session-test',
+  )
+  assert.equal(
+    Object.keys(
+      icons.logoRequest(
+        c,
+        'https://example.test.evil/sub/api/app/assets/a',
+        auth,
+      ).headers,
+    ).length,
+    0,
+  )
+  assert.equal(
     icons.logoRequest({ ...c, mode: 'public' }, '/api/app/assets/a', {
       mode: 'public',
       token: 'test',
@@ -83,6 +98,55 @@ test('private asset routing respects subpath and session expiry; external URLs r
     Object.keys(icons.logoRequest(c, 'https://cdn.test/logo.png', auth).headers)
       .length,
     0,
+  )
+})
+
+test('anonymous image redirects remove cookies, block unsafe targets and have a bounded hop count', async () => {
+  const h = harness({
+    config: c,
+    fetcher: async (_, init) => {
+      const redirect = {
+        url: 'https://cdn.test/final.svg',
+        headers: { Cookie: 'secret' },
+        cookies: [{ name: 'test', value: 'secret' }],
+      }
+      const next = await init.handleRedirect(redirect)
+      assert.equal(Object.keys(next.headers).length, 0)
+      assert.equal(next.cookies.length, 0)
+      assert.equal(
+        await init.handleRedirect({ url: 'file:///private/a' }),
+        null,
+      )
+      assert.equal(
+        await init.handleRedirect({ url: 'http://cdn.test/a' }),
+        null,
+      )
+      await init.handleRedirect(redirect)
+      assert.equal(await init.handleRedirect(redirect), null)
+      return response()
+    },
+  })
+  await h.load('icons.ts').prepareLogos(c, [sub(h, 'https://cdn.test/a')], auth)
+  assert.ok(h.load('icons.ts').readLogo(c, sub(h, 'https://cdn.test/a')))
+})
+
+test('static SVG export styles become attributes, white artwork gets a dark plate, ChatGPT works offline', () => {
+  const h = harness({ config: c }),
+    i = h.load('icons.ts')
+  const normalized = i.safeSVG(
+    '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "https://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg viewBox="0 0 24 24"><style>/*export*/.a{fill:white}.b{fill:#fff}</style><path class="a b" fill="black" style="opacity:0.8" d="M0 0h24v24H0z"/></svg>',
+  )
+  assert.ok(normalized)
+  assert.doesNotMatch(normalized, /style|DOCTYPE/)
+  assert.equal((normalized.match(/fill=/g) || []).length, 1)
+  assert.equal(i.logoBackground({ svg: normalized }), '#293147')
+  assert.equal(
+    i.safeSVG('<svg><style>.a{fill:url(https://other.test/a)}</style></svg>'),
+    null,
+  )
+  assert.ok(
+    i.readLogo(c, { ...sub(h, 'https://blocked.test/a'), name: 'Chatgpt Team' })
+      .svg,
   )
 })
 

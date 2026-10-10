@@ -23,6 +23,7 @@ import {
   type Config,
   type Subscription,
 } from './model'
+import { categoryOptions } from './display-data'
 import { save } from './state'
 import { ClientError, errorMessage } from './client'
 import { palette } from './ui'
@@ -141,11 +142,17 @@ export function Editor({
           value={s.currency}
           onChanged={(v) => update('currency', v.toUpperCase().trim())}
         />
-        <TextField
+        <Picker
           title="分类"
           value={s.category}
-          onChanged={(v) => update('category', v)}
-        />
+          onChanged={(v) => update('category', String(v))}
+        >
+          {categoryOptions(config, s.category).map(([value, label]) => (
+            <Text key={value} tag={value}>
+              {label}
+            </Text>
+          ))}
+        </Picker>
         <Picker
           title="状态"
           value={s.status}

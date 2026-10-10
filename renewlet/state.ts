@@ -1,5 +1,6 @@
 import { fetch, Widget } from 'scripting'
 import { clearLogos, prepareLogos } from './icons'
+import { clearCategories, prepareDisplayData } from './display-data'
 import {
   RenewletClient,
   ClientError,
@@ -68,6 +69,7 @@ export function saveConnection(c: Config, secret?: Credential) {
   store(CONFIG, c)
   store(CACHE, null)
   clearLogos()
+  clearCategories()
   Widget.reloadAll()
 }
 export function client(c: Config) {
@@ -76,6 +78,11 @@ export function client(c: Config) {
 export async function loadLogos(c: Config, list: Subscription[]) {
   try {
     await prepareLogos(c, list, credential(c))
+  } catch {}
+}
+export async function loadDisplayData(c: Config) {
+  try {
+    await prepareDisplayData(c, credential(c))
   } catch {}
 }
 export function initial(c = readConfig()): Snapshot {
@@ -211,6 +218,7 @@ export function forget(c: Config) {
     throw new ClientError('钥匙串移除失败')
   generation++
   clearLogos()
+  clearCategories()
   store(CACHE, null)
   store(CONFIG, { ...c, revision: String(Date.now()) })
   Widget.reloadAll()

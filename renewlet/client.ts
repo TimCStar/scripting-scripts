@@ -143,6 +143,12 @@ export class RenewletClient {
     )
     return parseSubscription(data.subscription)
   }
+  async categories(): Promise<unknown[]> {
+    const { data } = await this.request('/api/app/custom-config')
+    const values = object(data.config).categories
+    if (!Array.isArray(values)) throw new ClientError('分类配置格式不兼容')
+    return values.slice(0, 200)
+  }
   async save(
     id: string | null,
     payload: Record<string, unknown>,

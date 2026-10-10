@@ -20,6 +20,10 @@ function css(p, mode, parent) {
   const f = p.frame || {}
   if (f.width) s.push(`width:${f.width}px`)
   if (f.height) s.push(`height:${f.height}px`)
+  if (f.minHeight) s.push(`min-height:${f.minHeight}px`)
+  if (typeof f.maxHeight === 'number') s.push(`max-height:${f.maxHeight}px`)
+  if (f.minWidth) s.push(`min-width:${f.minWidth}px`)
+  if (typeof f.maxWidth === 'number') s.push(`max-width:${f.maxWidth}px`)
   if (f.maxWidth === 'infinity')
     s.push(
       parent === 'HStack' ? 'flex:1;min-width:0' : 'min-width:0;width:100%',
@@ -41,6 +45,9 @@ function css(p, mode, parent) {
   if (p.alignment === 'top') s.push('align-items:flex-start')
   if (p.alignment === 'firstTextBaseline') s.push('align-items:baseline')
   if (f.alignment === 'center') s.push('justify-content:center')
+  if (f.alignment === 'leading' || f.alignment === 'topLeading')
+    s.push('align-items:flex-start;text-align:left')
+  if (f.alignment === 'topLeading') s.push('justify-content:flex-start')
   if (p.padding) {
     const q = p.padding
     if (typeof q === 'number') s.push('padding:' + q + 'px')

@@ -1,6 +1,6 @@
 # Renewlet 续订手札
 
-为 iOS **Scripting** 编写的 Renewlet 原生客户端。小、中、大号主屏幕组件显示即将续订、试用结束或权益到期的订阅；打开脚本是全部订阅。支持排序记忆、搜索、筛选、详情、添加与编辑，随系统自动切换深浅色。
+为 iOS **Scripting** 编写的 Renewlet 原生客户端。小、中、大号主屏幕组件显示即将续订、试用结束或权益到期的订阅；打开脚本是全部订阅。支持排序记忆、搜索、筛选、详情、添加与编辑，随系统自动切换深浅色。1.2.0 修正长条组件左对齐，加入中文分类、CNY 参考换算并改进图标读取。
 
 ![实际 TSX 生成的设计近似，非 iOS 截图](assets/design-preview.png)
 
@@ -26,11 +26,11 @@
 
 ## 三个组件
 
-| 尺寸 | 展示 | 点击 |
-|---|---|---|
-| 小号 | 最近一笔的图标与名称，左侧倒计时、右侧日期与事件类型，下方金额、周期和窗口内笔数 | 整个组件打开全部订阅 |
-| 中号 | 最多 3 笔完整列表，每笔显示图标、名称、日期、事件类型、金额与剩余时间 | 项目打开详情，顶部和「全部」打开列表 |
-| 大号 | 最多 5 笔；高度 ≥370 pt 可显示 6 笔，附未来 7 天分币种标价合计与逾期笔数 | 项目打开详情，顶部和「全部」打开列表 |
+| 尺寸 | 展示                                                                             | 点击                                 |
+| ---- | -------------------------------------------------------------------------------- | ------------------------------------ |
+| 小号 | 最近一笔的图标与名称，左侧倒计时、右侧日期与事件类型，下方金额、周期和窗口内笔数 | 整个组件打开全部订阅                 |
+| 中号 | 最多 3 笔完整列表，每笔显示图标、名称、日期、事件类型、金额与剩余时间            | 项目打开详情，顶部和「全部」打开列表 |
+| 大号 | 最多 5 笔；高度 ≥370 pt 可显示 6 笔，附未来 7 天分币种标价合计与逾期笔数         | 项目打开详情，顶部和「全部」打开列表 |
 
 组件固定按日期从近到远排列，不受主列表排序影响。设置可选择未来 **7／14／30／60／90 天**。仅纳入进行中或试用中的未来项目，试用优先使用试用结束日期；永久买断、已暂停、已取消和已到期记录不占用组件。逾期待确认的记录在主列表单独筛选。
 
@@ -38,13 +38,21 @@
 
 ## 订阅图标
 
-组件、全部列表与详情均展示 Renewlet 返回的 `logo`，保留原色并放在白色圆角底板中。支持外部 HTTP(S) 图片、静态自包含 SVG，以及登录模式下的 `/api/app/assets/:id` 私有上传图标；PNG／JPEG 使用原生 `UIImage` 解码为缩略图，其他位图格式以设备解码能力为准。没有图标或加载失败时显示名称首字。
+组件、全部列表与详情均展示 Renewlet 返回的 `logo`，保留原色；白色 SVG 图形使用深色圆角底板，其余使用白色底板。支持外部 HTTP(S) 图片、静态自包含 SVG，以及登录模式下的 `/api/app/assets/:id` 私有上传图标（相对或同站绝对地址，含子路径部署）。PNG／JPEG 使用原生 `UIImage` 解码，缩略图生成失败时保留可解码的原图；其他位图格式以设备能力为准。
 
-私有图标需要 Session Cookie，上游不接受 Public API Token：只读模式下这类图标显示首字。外部图标请求不发送账户 Cookie 或 Token。图标请求使用 5 秒超时、拒绝重定向，接受不超过 2 MiB 的文件；SVG 仅接受不含脚本、外部资源、实体或样式表的静态内容，代码长度最多 256 KiB。不支持的格式、重定向链接或复杂 SVG 会使用首字占位，可在网页更换为 PNG／JPEG 或简单 SVG。
+私有上传图标从你的 Renewlet 站点读取，需要 Session Cookie，上游不接受 Public API Token。外部图片与最多 4 次重定向不发送账户凭证、清空重定向 Cookie；私有图标不跟随重定向，HTTPS 不降级 HTTP。图标请求使用 5 秒超时、接受不超过 2 MiB 的文件。SVG 支持简单 class／id 样式和内联样式转为绘图属性，移除标准 DTD，拒绝脚本、实体、外部资源及不支持的复杂样式，代码上限 256 KiB。
+
+ChatGPT / OpenAI 在缺失或网络失败时使用包内离线品牌图标。其他没有图标或加载失败的项目显示名称首字。**Renewlet 0.3.30 没有任意外链图片代理接口**：若外部图片在设备网络不可达，请在 Renewlet 网页将该订阅图标改为上传文件，再用登录模式同步；脚本会从本站读取它，不能自动把远程图片变成本站资源。
 
 图标按连接身份隔离缓存，最多 80 个，7 天后尝试刷新；断网保留已有图标，保存连接或退出后清空。组件在呈现前加载可见项目；列表先显示数据，后台预取前 40 笔，其他行出现时按需加载。演示账本的图标是包内示意 SVG，不产生外部图片请求。
 
 每约 **30 分钟**申请一次刷新，最终时机由 iOS WidgetKit 决定。保存设置或订阅后会请求刷新；不是实时倒计时。组件显示上次采样的日期判断与更新时间；跨午夜后以实际刷新为准。
+
+## 分类与参考换算
+
+内置分类使用 Renewlet 的中文名称（例如 `cloud_storage` →「云存储」、`ai_tools` →「AI 工具」）。登录后读取本站自定义分类的 `zh-CN` 名称；选择器显示中文，保存仍提交原始分类值，未知自定义值保留。搜索同时匹配中文名称和原始值。
+
+外币标价后紧跟小字 **`≈ CNY xx.xx`**，CNY 本币不重复显示换算。与 Renewlet 相同的公共汇率源：jsDelivr 的 `@fawazahmed0/currency-api`，不可用时尝试 `latest.currency-api.pages.dev`；匿名请求，不发送账单或凭证。按 USD 基准交叉换算到 CNY，保留两位小数，每 24 小时更新，断网沿用最近成功的汇率；详情记录区显示源日期，未知币种或无缓存显示 `≈ CNY —`。演示账本只用明确标记的虚构汇率且不联网。换算不改变原币种、保存字段、排序或分币种汇总。
 
 ## 全部订阅与编辑
 
@@ -69,6 +77,7 @@
 - 只读：`GET /api/public/v1/subscriptions`（完整游标分页）、`GET /api/public/v1/subscriptions/:id`。
 - 会话：`POST /api/app/auth/login`、`POST /api/app/auth/mfa/verify`、`POST /api/app/auth/logout`。
 - 登录账本：`GET /api/app/subscriptions`（完整游标分页）、`GET /api/app/subscriptions/:id`、`POST /api/app/subscriptions`、`PATCH /api/app/subscriptions/:id`。
+- 中文自定义分类：`GET /api/app/custom-config`（仅登录会话）。
 - 私有图标：`GET /api/app/assets/:id`（仅登录会话）。
 
 产品 API 是上游内部契约，后续版本可能变化，未声称兼容所有旧版／分支。更新脚本时请对照 [上游源码](https://github.com/zhiyingzzhou/renewlet) 和 [Public API](https://github.com/zhiyingzzhou/renewlet/blob/main/docs/public-api.md)。参考来源与 MIT 许可见 [ATTRIBUTION.md](ATTRIBUTION.md)。
@@ -88,6 +97,6 @@ npm run preview
 npm run package
 ```
 
-Node.js 20+；运行时不依赖 npm 包。类型检查只覆盖独立模型和客户端，不使用伪造 Scripting 声明冒充原生类型验证。真机联调可使用官方 [scripting-cli](https://www.npmjs.com/package/scripting-cli) 同步 app 当前声明后检查所有 TSX。
+Node.js 20+；运行时不依赖 npm 包。类型检查覆盖独立模型、客户端和展示数据计算，不使用伪造 Scripting 声明冒充原生类型验证。真机联调可使用官方 [scripting-cli](https://www.npmjs.com/package/scripting-cli) 同步 app 当前声明后检查所有 TSX。
 
 官方依据：[Scripting 开发指南](https://github.com/ScriptingApp/scripting-app-development)、[LLM 文档索引](https://scriptingapp.github.io/llms.txt)、[Widget API](https://scriptingapp.github.io/guide/Widget/Widget%20API)、[fetch](https://scriptingapp.github.io/guide/Utilities/Request/fetch)、[Response / Cookie](https://scriptingapp.github.io/guide/Utilities/Request/Response)、[Keychain](https://scriptingapp.github.io/guide/Device%20Capabilities/Keychain)、[Storage](https://scriptingapp.github.io/guide/Utilities/Storage)、[DatePicker](https://scriptingapp.github.io/guide/Views/Controls/DatePicker/)。

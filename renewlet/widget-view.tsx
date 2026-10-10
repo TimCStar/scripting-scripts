@@ -4,13 +4,19 @@ import {
   dueFor,
   dueTypes,
   totals,
-  priceLabel,
   cycleLabel,
   type Snapshot,
   type Config,
   type Family,
 } from './model'
-import { palette, SubscriptionRow, SubscriptionIcon, Note, tone } from './ui'
+import {
+  palette,
+  SubscriptionRow,
+  SubscriptionIcon,
+  SubscriptionPrice,
+  Note,
+  tone,
+} from './ui'
 
 export function widgetLimit(family: Family, height: number) {
   return family === 'systemSmall'
@@ -55,10 +61,17 @@ export function WidgetView({
         alignment="leading"
         spacing={small ? 6 : 5}
         padding={{ horizontal: small ? 12 : 14, vertical: 12 }}
-        frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }}
+        frame={{
+          maxWidth: 'infinity',
+          maxHeight: 'infinity',
+          alignment: 'topLeading',
+        }}
       >
         {!small ? (
-          <Link url={home} frame={{ maxWidth: 'infinity' }}>
+          <Link
+            url={home}
+            frame={{ maxWidth: 'infinity', alignment: 'leading' }}
+          >
             <HStack>
               <Text
                 font={large ? 14 : 10}
@@ -77,7 +90,11 @@ export function WidgetView({
         {!next ? (
           <VStack
             spacing={8}
-            frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }}
+            frame={{
+              maxWidth: 'infinity',
+              maxHeight: 'infinity',
+              alignment: 'topLeading',
+            }}
           >
             <Spacer />
             <Image
@@ -101,14 +118,18 @@ export function WidgetView({
           <VStack
             alignment="leading"
             spacing={6}
-            frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }}
+            frame={{
+              maxWidth: 'infinity',
+              maxHeight: 'infinity',
+              alignment: 'topLeading',
+            }}
           >
             <HStack spacing={8}>
               <SubscriptionIcon s={next.subscription} size={30} />
               <VStack
                 alignment="leading"
                 spacing={3}
-                frame={{ maxWidth: 'infinity' }}
+                frame={{ maxWidth: 'infinity', alignment: 'leading' }}
               >
                 <Text
                   font={12}
@@ -120,7 +141,7 @@ export function WidgetView({
                   {next.subscription.name}
                 </Text>
                 <Text font={9} foregroundStyle={palette.muted} lineLimit={1}>
-                  最近到期
+                  {cycleLabel(next.subscription)}
                 </Text>
               </VStack>
             </HStack>
@@ -152,28 +173,17 @@ export function WidgetView({
                 </Text>
               </VStack>
             </HStack>
-            <HStack alignment="firstTextBaseline" spacing={3}>
-              <Text
-                font={14}
-                fontWeight="semibold"
-                foregroundStyle={palette.ink}
-                lineLimit={1}
-                minScaleFactor={0.65}
-                monospacedDigit
-              >
-                {priceLabel(next.subscription)}
-              </Text>
-              <Spacer />
-              <Text font={9} foregroundStyle={palette.muted} lineLimit={1}>
-                {cycleLabel(next.subscription)}
-              </Text>
-            </HStack>
+            <SubscriptionPrice s={next.subscription} font={13} compact />
           </VStack>
         ) : (
           <VStack
             alignment="leading"
             spacing={large ? 6 : 4}
-            frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }}
+            frame={{
+              maxWidth: 'infinity',
+              maxHeight: 'infinity',
+              alignment: 'topLeading',
+            }}
           >
             {large ? (
               <HStack
@@ -207,10 +217,16 @@ export function WidgetView({
                 url={Script.createRunURLScheme(Script.name, {
                   subscription: d.subscription.id,
                 })}
-                frame={{ maxWidth: 'infinity' }}
+                frame={{ maxWidth: 'infinity', alignment: 'leading' }}
               >
                 <VStack
-                  frame={{ maxWidth: 'infinity', height: large ? 34 : 29 }}
+                  alignment="leading"
+                  frame={{
+                    maxWidth: 'infinity',
+                    minHeight: large ? 34 : 29,
+                    maxHeight: large ? 34 : 29,
+                    alignment: 'leading',
+                  }}
                 >
                   <SubscriptionRow s={d.subscription} date={date} dense />
                 </VStack>

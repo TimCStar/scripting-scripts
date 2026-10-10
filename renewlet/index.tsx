@@ -18,6 +18,7 @@ import {
   readSort,
   saveSort,
   loadLogos,
+  loadDisplayData,
 } from './state'
 import {
   today,
@@ -29,6 +30,7 @@ import {
   type Config,
 } from './model'
 import { palette, SubscriptionRow, Overview } from './ui'
+import { displayCategory } from './display-data'
 import { Settings } from './settings'
 import { Detail } from './detail'
 import { Editor } from './editor'
@@ -60,17 +62,22 @@ export function Dashboard() {
       ) {
         setSnapshot(fresh)
         // Refresh already-mounted rows too, without holding the page's refresh lock.
-        loadLogos(
-          c,
-          sorted(fresh.subscriptions, readSort(), today(c.zone)).slice(0, 40),
-        ).then(() => {
-          if (
-            gate.active &&
-            serial === gate.serial &&
-            readConfig().revision === c.revision
-          )
-            setSnapshot({ ...fresh })
-        })
+        ;[
+          loadDisplayData(c),
+          loadLogos(
+            c,
+            sorted(fresh.subscriptions, readSort(), today(c.zone)).slice(0, 40),
+          ),
+        ].forEach((job) =>
+          job.then(() => {
+            if (
+              gate.active &&
+              serial === gate.serial &&
+              readConfig().revision === c.revision
+            )
+              setSnapshot({ ...fresh })
+          }),
+        )
       }
     } finally {
       if (serial === gate.serial) {
@@ -102,7 +109,7 @@ export function Dashboard() {
           (filter === 'upcoming' && nextIDs.has(s.id)) ||
           (filter === 'overdue' && (dueFor(s, date)?.days ?? 0) < 0)) &&
         (!search ||
-          `${s.name} ${s.category} ${s.tags.join(' ')} ${s.currency}`
+          `${s.name} ${s.category} ${displayCategory(config, s.category)} ${s.tags.join(' ')} ${s.currency}`
             .toLowerCase()
             .includes(search.toLowerCase())),
     ),

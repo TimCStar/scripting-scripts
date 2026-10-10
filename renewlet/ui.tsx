@@ -1,5 +1,7 @@
 import { VStack, HStack, Text, Image, SVG, Spacer, useState } from 'scripting'
-import { readLogo } from './icons'
+import { readRates, displayCategory } from './display-data'
+import { cnyLabel } from './presentation'
+import { readLogo, logoBackground } from './icons'
 import { readConfig, loadLogos } from './state'
 import {
   dueFor,
@@ -69,7 +71,7 @@ export function SubscriptionIcon({
       <VStack
         onAppear={appear}
         frame={{ width: size, height: size }}
-        background="#FFFFFF"
+        background={logoBackground(logo)}
         clipShape={{ type: 'rect', cornerRadius: size * 0.25 }}
       >
         {'svg' in logo ? (
@@ -130,6 +132,42 @@ export function Note({
     </Text>
   )
 }
+export function SubscriptionPrice({
+  s,
+  font = 14,
+  compact = false,
+}: {
+  s: Subscription
+  font?: number
+  compact?: boolean
+}) {
+  const converted = cnyLabel(s, readRates(readConfig()))
+  return (
+    <HStack alignment="firstTextBaseline" spacing={3}>
+      <Text
+        font={font}
+        fontWeight="medium"
+        foregroundStyle={palette.ink}
+        monospacedDigit
+        lineLimit={1}
+        minScaleFactor={0.65}
+      >
+        {priceLabel(s)}
+      </Text>
+      {converted ? (
+        <Text
+          font={compact ? 8 : 10}
+          foregroundStyle={palette.muted}
+          monospacedDigit
+          lineLimit={1}
+          minScaleFactor={0.65}
+        >
+          {converted}
+        </Text>
+      ) : null}
+    </HStack>
+  )
+}
 export function SubscriptionRow({
   s,
   date,
@@ -144,13 +182,13 @@ export function SubscriptionRow({
     <HStack
       spacing={dense ? 9 : 12}
       padding={{ vertical: dense ? 0 : 8 }}
-      frame={{ maxWidth: 'infinity' }}
+      frame={{ maxWidth: 'infinity', alignment: 'leading' }}
     >
       <SubscriptionIcon s={s} size={dense ? 28 : 42} />
       <VStack
         alignment="leading"
         spacing={dense ? 3 : 5}
-        frame={{ maxWidth: 'infinity' }}
+        frame={{ maxWidth: 'infinity', alignment: 'leading' }}
       >
         <Text
           font={dense ? 12 : 16}
@@ -171,20 +209,11 @@ export function SubscriptionRow({
             ? d
               ? `${d.date.slice(5).replace('-', '/')} · ${dueTypes[d.type]}`
               : cycleLabel(s)
-            : `${s.category} · ${cycleLabel(s)}${s.autoRenew ? ' · 自动续订' : ''}`}
+            : `${displayCategory(readConfig(), s.category)} · ${cycleLabel(s)}${s.autoRenew ? ' · 自动续订' : ''}`}
         </Text>
       </VStack>
       <VStack alignment="trailing" spacing={4}>
-        <Text
-          font={dense ? 11 : 14}
-          fontWeight="medium"
-          foregroundStyle={palette.ink}
-          monospacedDigit
-          lineLimit={1}
-          minScaleFactor={0.65}
-        >
-          {priceLabel(s)}
-        </Text>
+        <SubscriptionPrice s={s} font={dense ? 11 : 14} compact={dense} />
         <Text font={dense ? 10 : 11} foregroundStyle={tone(d)} lineLimit={1}>
           {dueLabel(d)}
         </Text>
@@ -194,7 +223,11 @@ export function SubscriptionRow({
 }
 export function Metric({ title, value }: { title: string; value: string }) {
   return (
-    <VStack alignment="leading" spacing={5} frame={{ maxWidth: 'infinity' }}>
+    <VStack
+      alignment="leading"
+      spacing={5}
+      frame={{ maxWidth: 'infinity', alignment: 'leading' }}
+    >
       <Text
         font={27}
         fontWeight="semibold"

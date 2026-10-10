@@ -1,6 +1,6 @@
 import { Widget } from 'scripting'
 import { today, upcoming, type Family } from './model'
-import { readConfig, refresh, loadLogos } from './state'
+import { readConfig, refresh, loadLogos, loadDisplayData } from './state'
 import { WidgetView, widgetLimit } from './widget-view'
 async function run() {
   const config = readConfig(),
@@ -13,12 +13,15 @@ async function run() {
         ? 'systemLarge'
         : 'systemMedium'
   const date = today(config.zone)
-  await loadLogos(
-    config,
-    upcoming(snapshot.subscriptions, date, config.days)
-      .slice(0, widgetLimit(family, size.height))
-      .map((d) => d.subscription),
-  )
+  await Promise.all([
+    loadDisplayData(config),
+    loadLogos(
+      config,
+      upcoming(snapshot.subscriptions, date, config.days)
+        .slice(0, widgetLimit(family, size.height))
+        .map((d) => d.subscription),
+    ),
+  ])
   Widget.present(
     <WidgetView
       snapshot={snapshot}

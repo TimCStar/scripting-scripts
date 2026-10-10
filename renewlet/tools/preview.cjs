@@ -15,6 +15,20 @@ async function main() {
         m = h.load('model.ts'),
         c = m.defaultConfig(),
         s = m.demoSnapshot(c.zone, new Date('2026-10-10T04:00:00Z'))
+      // Stress left alignment and FX typography with varied name lengths.
+      s.subscriptions[0] = {
+        ...s.subscriptions[0],
+        price: '11',
+        currency: 'GBP',
+        category: 'cloud_storage',
+      }
+      s.subscriptions[1] = {
+        ...s.subscriptions[1],
+        name: '云服务 · 家庭共享订阅',
+        price: '35.99',
+        currency: 'TRY',
+        category: 'streaming',
+      }
       const v = h.load('widget-view.tsx').WidgetView({
         snapshot: s,
         config: c,
@@ -34,7 +48,14 @@ async function main() {
   const h = harness(),
     m = h.load('model.ts'),
     c = m.defaultConfig()
-  h.data.set('renewlet.demo.v1', m.demoSnapshot(c.zone))
+  const pages = m.demoSnapshot(c.zone)
+  pages.subscriptions[0] = {
+    ...pages.subscriptions[0],
+    currency: 'GBP',
+    price: '11',
+    category: 'cloud_storage',
+  }
+  h.data.set('renewlet.demo.v1', pages)
   h.load('index.tsx')
   await h.globals.completion
   const dashboard = h.load('index.tsx').Dashboard(),

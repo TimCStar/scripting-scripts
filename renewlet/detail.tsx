@@ -12,7 +12,13 @@ import {
   Link,
   useState,
 } from 'scripting'
-import { detail, initial, readConfig, loadLogos } from './state'
+import {
+  detail,
+  initial,
+  readConfig,
+  loadLogos,
+  loadDisplayData,
+} from './state'
 import {
   today,
   dueFor,
@@ -23,8 +29,9 @@ import {
   statuses,
   type Subscription,
 } from './model'
-import { palette, SubscriptionIcon } from './ui'
+import { palette, SubscriptionIcon, SubscriptionPrice } from './ui'
 import { errorMessage } from './client'
+import { displayCategory, readRates } from './display-data'
 import { Editor } from './editor'
 function Field({ title, value }: { title: string; value: string }) {
   return (
@@ -56,7 +63,7 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
         setS(fresh)
         setReady(true)
         setMessage('')
-        await loadLogos(config, [fresh])
+        await Promise.all([loadLogos(config, [fresh]), loadDisplayData(config)])
         if (gate.active && serial === gate.serial) setS({ ...fresh })
       }
     } catch (e) {
@@ -134,7 +141,7 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
                 <VStack
                   alignment="leading"
                   spacing={6}
-                  frame={{ maxWidth: 'infinity' }}
+                  frame={{ maxWidth: 'infinity', alignment: 'leading' }}
                 >
                   <Text
                     font={23}
@@ -148,16 +155,8 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
                   </Text>
                 </VStack>
               </HStack>
-              <HStack alignment="firstTextBaseline">
-                <Text
-                  font={23}
-                  fontWeight="medium"
-                  foregroundStyle={palette.accent}
-                  monospacedDigit
-                >
-                  {priceLabel(s)}
-                </Text>
-                <Spacer />
+              <VStack alignment="leading" spacing={8}>
+                <SubscriptionPrice s={s} font={23} />
                 <Text
                   font={13}
                   fontWeight="semibold"
@@ -166,7 +165,7 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
                   {dueLabel(d)}
                   {d ? ` · ${dueTypes[d.type]}` : ''}
                 </Text>
-              </HStack>
+              </VStack>
               {!ready ? (
                 <Text font={11} foregroundStyle={palette.muted}>
                   列表快照 · 正在读取完整详情
@@ -175,7 +174,7 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
             </VStack>
           </Section>
           <Section header={<Text>账单档案</Text>}>
-            <Field title="分类" value={s.category} />
+            <Field title="分类" value={displayCategory(config, s.category)} />
             <Field title="开始日期" value={s.startDate || '未知'} />
             <Field title="下次日期" value={s.nextBillingDate} />
             {s.trialEndDate ? (
@@ -235,6 +234,15 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
             </Section>
           ) : null}
           <Section header={<Text>记录</Text>}>
+            {s.currency !== 'CNY' ? (
+              <Text font={11} foregroundStyle={palette.muted}>
+                {config.mode === 'demo'
+                  ? '演示汇率 · 非真实报价'
+                  : readRates(config)
+                    ? '参考汇率 · ' + readRates(config)!.date
+                    : '参考汇率暂不可用'}
+              </Text>
+            ) : null}
             <Field title="ID" value={s.id} />
             <Field title="更新" value={s.updatedAt || '服务端未提供'} />
             <Text font={11} foregroundStyle={palette.muted}>
