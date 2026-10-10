@@ -136,14 +136,16 @@ export function SubscriptionPrice({
   s,
   font = 14,
   compact = false,
+  alignment = 'leading',
 }: {
   s: Subscription
   font?: number
   compact?: boolean
+  alignment?: 'leading' | 'trailing'
 }) {
   const converted = cnyLabel(s, readRates(readConfig()))
   return (
-    <HStack alignment="firstTextBaseline" spacing={3}>
+    <VStack alignment={alignment} spacing={compact ? 2 : 3}>
       <Text
         font={font}
         fontWeight="medium"
@@ -156,7 +158,7 @@ export function SubscriptionPrice({
       </Text>
       {converted ? (
         <Text
-          font={compact ? 8 : 10}
+          font={compact ? 9 : 10}
           foregroundStyle={palette.muted}
           monospacedDigit
           lineLimit={1}
@@ -165,7 +167,7 @@ export function SubscriptionPrice({
           {converted}
         </Text>
       ) : null}
-    </HStack>
+    </VStack>
   )
 }
 export function SubscriptionRow({
@@ -200,23 +202,37 @@ export function SubscriptionRow({
           {s.pinned ? '· ' : ''}
           {s.name}
         </Text>
-        <Text
-          font={dense ? 9 : 11}
-          foregroundStyle={palette.muted}
-          lineLimit={1}
-        >
-          {dense
-            ? d
-              ? `${d.date.slice(5).replace('-', '/')} · ${dueTypes[d.type]}`
-              : cycleLabel(s)
-            : `${displayCategory(readConfig(), s.category)} · ${cycleLabel(s)}${s.autoRenew ? ' · 自动续订' : ''}`}
-        </Text>
+        <HStack spacing={4} alignment="firstTextBaseline">
+          <Text
+            font={dense ? 9 : 11}
+            foregroundStyle={palette.muted}
+            lineLimit={1}
+          >
+            {dense
+              ? d
+                ? `${d.date.slice(5).replace('-', '/')} · ${dueTypes[d.type]}`
+                : cycleLabel(s)
+              : `${displayCategory(readConfig(), s.category)} · ${cycleLabel(s)}${s.autoRenew ? ' · 自动续订' : ''}`}
+          </Text>
+          {dense ? (
+            <Text font={9} foregroundStyle={tone(d)} lineLimit={1}>
+              {dueLabel(d)}
+            </Text>
+          ) : null}
+        </HStack>
       </VStack>
       <VStack alignment="trailing" spacing={4}>
-        <SubscriptionPrice s={s} font={dense ? 11 : 14} compact={dense} />
-        <Text font={dense ? 10 : 11} foregroundStyle={tone(d)} lineLimit={1}>
-          {dueLabel(d)}
-        </Text>
+        <SubscriptionPrice
+          s={s}
+          font={dense ? 11 : 14}
+          compact={dense}
+          alignment="trailing"
+        />
+        {!dense ? (
+          <Text font={11} foregroundStyle={tone(d)} lineLimit={1}>
+            {dueLabel(d)}
+          </Text>
+        ) : null}
       </VStack>
     </HStack>
   )

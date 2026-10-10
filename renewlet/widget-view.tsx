@@ -117,7 +117,7 @@ export function WidgetView({
         ) : small ? (
           <VStack
             alignment="leading"
-            spacing={6}
+            spacing={4}
             frame={{
               maxWidth: 'infinity',
               maxHeight: 'infinity',
