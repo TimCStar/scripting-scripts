@@ -60,7 +60,7 @@ export function WidgetView({
       <VStack
         alignment="leading"
         spacing={small ? 6 : 5}
-        padding={{ horizontal: small ? 12 : 14, vertical: 12 }}
+        padding={{ horizontal: small ? 12 : 14, vertical: small ? 10 : 12 }}
         frame={{
           maxWidth: 'infinity',
           maxHeight: 'infinity',
@@ -117,30 +117,30 @@ export function WidgetView({
         ) : small ? (
           <VStack
             alignment="leading"
-            spacing={4}
+            spacing={3}
             frame={{
               maxWidth: 'infinity',
               maxHeight: 'infinity',
               alignment: 'topLeading',
             }}
           >
-            <HStack spacing={8}>
-              <SubscriptionIcon s={next.subscription} size={30} />
+            <HStack spacing={7}>
+              <SubscriptionIcon s={next.subscription} size={36} />
               <VStack
                 alignment="leading"
                 spacing={3}
                 frame={{ maxWidth: 'infinity', alignment: 'leading' }}
               >
                 <Text
-                  font={12}
+                  font={15}
                   fontWeight="semibold"
                   foregroundStyle={palette.ink}
                   lineLimit={1}
-                  minScaleFactor={0.7}
+                  minScaleFactor={0.75}
                 >
                   {next.subscription.name}
                 </Text>
-                <Text font={9} foregroundStyle={palette.muted} lineLimit={1}>
+                <Text font={10} foregroundStyle={palette.muted} lineLimit={1}>
                   {cycleLabel(next.subscription)}
                 </Text>
               </VStack>
