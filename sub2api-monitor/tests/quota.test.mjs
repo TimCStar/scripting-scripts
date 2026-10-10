@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {pathToFileURL} from 'node:url'
 const directory=await mkdtemp(join(tmpdir(),'sub2api-quota-test-'))
-for(const file of ['model.ts','client.ts']) await writeFile(join(directory,file),(await readFile(new URL('../'+file,import.meta.url),'utf8')).replace("from './model'","from './model.ts'"))
+for(const file of ['model.ts','client.ts']) await writeFile(join(directory,file),(await readFile(new URL('../'+file,import.meta.url),'utf8')).replaceAll("from './model'","from './model.ts'"))
 const m=await import(pathToFileURL(join(directory,'model.ts')))
 const {attachSevenDayCost,loadAccounts}=await import(pathToFileURL(join(directory,'client.ts')))
 test.after(()=>rm(directory,{recursive:true,force:true}))

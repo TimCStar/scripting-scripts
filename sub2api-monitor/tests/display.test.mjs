@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {pathToFileURL} from 'node:url'
 const dir=await mkdtemp(join(tmpdir(),'sub2api-display-'))
-for(const file of ['model.ts','display.ts','client.ts','state.ts'])await writeFile(join(dir,file),(await readFile(new URL('../'+file,import.meta.url),'utf8')).replace("from './model'","from './model.ts'"))
+for(const file of ['model.ts','display.ts','client.ts','state.ts'])await writeFile(join(dir,file),(await readFile(new URL('../'+file,import.meta.url),'utf8')).replaceAll("from './model'","from './model.ts'"))
 const d=await import(pathToFileURL(join(dir,'display.ts'))),m=await import(pathToFileURL(join(dir,'model.ts')))
 test.after(()=>rm(dir,{recursive:true,force:true}))
 const now=Date.parse('2026-10-09T12:00:00Z')

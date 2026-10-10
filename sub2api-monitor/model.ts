@@ -6,7 +6,7 @@ export type AccountView = {
   windows: Window[]; todayCost: number | null; todayTokens: number | null; todayRequests?: number | null;
   todayDate?: string; todayTimeZone?: string; todayUpdatedAt?: string;
   resetCredits?: {available:number|null;expiresAt:string|null;automatic:boolean|null;state:string|null;stateAt:string|null};
-  estimate: string; fetchedAt: string; readStartedAt?: string; error?: string
+  estimate: string; fetchedAt: string; readStartedAt?: string; requestErrors?: string[]; error?: string
 }
 export type Config = { version: 1; baseURL: string; accountIDs: number[]; demo: boolean; refreshMinutes: number; staleMinutes: number; revision?:string; displayNames?:Record<string,string>; fiveHourVisibility?:Record<string,'auto'|'show'|'hide'>; referenceCaps?: Record<string, {fiveHour?:number;sevenDay?:number}> }
 export const DEFAULT_CONFIG: Config = { version: 1, baseURL: '', accountIDs: [], demo: true, refreshMinutes: 20, staleMinutes: 60 }
@@ -168,7 +168,7 @@ export function validateCachedAccount(value:unknown):AccountView|null {
   if(!Number.isSafeInteger(a.id)||Number(a.id)<=0||!['openai','anthropic','antigravity','other'].includes(String(a.provider))||!Array.isArray(a.windows)||!Array.isArray(a.groups))return null
   const windows:Window[]=[]
   for(const entry of a.windows.slice(0,3)){const w=record(entry);if(typeof w.label!=='string'||(w.percent!==null&&nonnegative(w.percent)===null))return null;windows.push({label:safeText(w.label,'?',10),percent:nonnegative(w.percent),resetsAt:iso(w.resetsAt),updatedAt:iso(w.updatedAt),...(w.costStatus==='complete'?{usedUSD:nonnegative(w.usedUSD),estimatedTotalUSD:nonnegative(w.estimatedTotalUSD),costStatus:'complete' as const}:w.costStatus==='truncated'||w.costStatus==='unavailable'?{usedUSD:null,estimatedTotalUSD:null,costStatus:w.costStatus}:{} )})}
-  return {id:Number(a.id),name:safeText(a.name,'未命名账号',40),provider:a.provider as Provider,groups:a.groups.map(x=>safeText(x,'',30)).filter(Boolean).slice(0,3),status:safeText(a.status,'未知',20),windows,todayCost:nonnegative(a.todayCost),...(typeof a.todayDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(a.todayDate)&&typeof a.todayTimeZone==='string'&&a.todayTimeZone.length<=100&&iso(a.todayUpdatedAt)?{todayDate:a.todayDate,todayTimeZone:a.todayTimeZone,todayUpdatedAt:iso(a.todayUpdatedAt)!}:{}),todayTokens:nonnegative(a.todayTokens),todayRequests:nonnegative(a.todayRequests),...(a.provider==='openai'&&a.resetCredits?{resetCredits:{available:nonnegative(record(a.resetCredits).available),expiresAt:iso(record(a.resetCredits).expiresAt),automatic:typeof record(a.resetCredits).automatic==='boolean'?record(a.resetCredits).automatic as boolean:null,state:typeof record(a.resetCredits).state==='string'?safeText(record(a.resetCredits).state,'',10):null,stateAt:iso(record(a.resetCredits).stateAt)}}:{}),estimate:safeText(a.estimate,'额度未提供'),fetchedAt:iso(a.fetchedAt)||'',...(iso(a.readStartedAt)?{readStartedAt:iso(a.readStartedAt)!}:{}),...(typeof a.error==='string'?{error:safeText(a.error,'连接失败')}:{} )}
+  return {id:Number(a.id),name:safeText(a.name,'未命名账号',40),provider:a.provider as Provider,groups:a.groups.map(x=>safeText(x,'',30)).filter(Boolean).slice(0,3),status:safeText(a.status,'未知',20),windows,todayCost:nonnegative(a.todayCost),...(typeof a.todayDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(a.todayDate)&&typeof a.todayTimeZone==='string'&&a.todayTimeZone.length<=100&&iso(a.todayUpdatedAt)?{todayDate:a.todayDate,todayTimeZone:a.todayTimeZone,todayUpdatedAt:iso(a.todayUpdatedAt)!}:{}),todayTokens:nonnegative(a.todayTokens),todayRequests:nonnegative(a.todayRequests),...(a.provider==='openai'&&a.resetCredits?{resetCredits:{available:nonnegative(record(a.resetCredits).available),expiresAt:iso(record(a.resetCredits).expiresAt),automatic:typeof record(a.resetCredits).automatic==='boolean'?record(a.resetCredits).automatic as boolean:null,state:typeof record(a.resetCredits).state==='string'?safeText(record(a.resetCredits).state,'',10):null,stateAt:iso(record(a.resetCredits).stateAt)}}:{}),estimate:safeText(a.estimate,'额度未提供'),fetchedAt:iso(a.fetchedAt)||'',...(iso(a.readStartedAt)?{readStartedAt:iso(a.readStartedAt)!}:{}),...(Array.isArray(a.requestErrors)?{requestErrors:a.requestErrors.filter((x):x is string=>typeof x==='string').slice(0,4).map(x=>{const match=/^(账号|7d 边界记录|用量统计)：(.*)$/.exec(x);return match?`${match[1]}：${safeRequestError(new Error(match[2]))}`:'请求失败'})}:{}),...(typeof a.error==='string'?{error:safeRequestError(new Error(a.error))}:{} )}
 }
 
 export type Layout = 'small' | 'mediumOne' | 'mediumTwo' | 'largeOne' | 'largeTwo' | 'largeRows'
@@ -226,4 +226,13 @@ function validatedFiveHourVisibility(value:unknown):Record<string,'auto'|'show'|
  const result:Record<string,'auto'|'show'|'hide'>={}
  for(const [id,setting] of Object.entries(record(value)))if(/^[1-9]\d*$/.test(id)&&Number.isSafeInteger(Number(id))&&(setting==='auto'||setting==='show'||setting==='hide'))result[id]=setting
  return result
+}
+
+/** Never surface a response body, URL, credential, or arbitrary thrown message. */
+export function safeRequestError(error:unknown):string {
+  const message=error instanceof Error?error.message:''
+  if(['管理凭证失效或权限不足','接口或账号不存在','服务器返回格式不兼容','接口版本或权限不兼容','账号响应不匹配'].includes(message))return message
+  if(/^服务器暂不可用（[1-5][0-9]{2}）$/.test(message))return message
+  if(error instanceof Error&&error.name==='TimeoutError'||/timeout|timed\s*out|超时/i.test(message))return '网络请求超时'
+  return '网络连接失败'
 }

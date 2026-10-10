@@ -1,7 +1,8 @@
-import { normalizeAccount, localDay, nonnegative, estimatedTotalCost, sevenDayCostStart, accountLogCost, isStale, type Window, type AccountView, type Config } from './model'
+import { safeRequestError, normalizeAccount, localDay, nonnegative, estimatedTotalCost, sevenDayCostStart, accountLogCost, isStale, type Window, type AccountView, type Config } from './model'
 export type FetchLike = (url: string, options: {method:string;headers:Record<string,string>;timeout:number;handleRedirect:()=>Promise<null>}) => Promise<{ok:boolean;status:number;json:()=>Promise<unknown>}>
 export type Auth = { kind: 'apiKey' | 'jwt'; token: string }
 export type LoadResult = { accounts: AccountView[]; fetchedAt: string; errors: Record<string,string> }
+export { safeRequestError }
 function data(value: unknown): unknown {
   if (!value || typeof value !== 'object') throw new Error('服务器返回格式不兼容')
   const envelope = value as {code?:number;data?:unknown}
@@ -21,19 +22,29 @@ export async function loadAccounts(config: Config, auth: Auth, fetcher: FetchLik
   const errors: Record<string,string> = {}
   // Caller constrains widget reads to 1/2/4 visible accounts. All requests are passive reads.
   const accounts = await Promise.all(config.accountIDs.map(async id => {
+    const requestErrors:string[]=[]
+    async function accountGet(path:string):Promise<unknown>{
+      try{return await get(path)}catch(error){
+        const scope=path.startsWith('accounts/')?'账号':path.startsWith('usage?')?'7d 边界记录':'用量统计'
+        const reason=`${scope}：${safeRequestError(error)}`
+        if(!requestErrors.includes(reason))requestErrors.push(reason)
+        throw error
+      }
+    }
     try {
-      const raw = await get(`accounts/${id}`)
+      const raw = await accountGet(`accounts/${id}`)
       const account = normalizeAccount(raw,null,{})
       account.readStartedAt=startedAt
       if (account.id !== id) throw new Error('账号响应不匹配')
       if(account.provider==='openai'||account.provider==='anthropic') {
         const weekly=account.windows.find(w=>w.label==='7d')
-        if(weekly) await attachSevenDayCost(weekly,id,get,config.staleMinutes)
+        if(weekly) await attachSevenDayCost(weekly,id,accountGet,config.staleMinutes)
       }
-      await attachTodayCost(account,get)
+      await attachTodayCost(account,accountGet)
+      if(requestErrors.length){account.requestErrors=requestErrors;errors[String(id)]=requestErrors.join("；")}
       return account
     } catch (error) {
-      const message = error instanceof Error && /^(管理凭证|接口|服务器|账号响应)/.test(error.message) ? error.message : '网络连接失败'
+      const message = safeRequestError(error)
       errors[String(id)] = message
       const cached = previous.find(x => x.id === id)
       return cached ? {...cached,error:message} : {id,name:`账号 #${id}`,provider:'other' as const,groups:[],status:'未知',windows:[],todayCost:null,todayTokens:null,estimate:'额度未提供',fetchedAt:'',error:message}

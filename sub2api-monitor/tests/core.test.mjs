@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url'
 const directory=await mkdtemp(join(tmpdir(),'sub2api-test-'))
 for(const file of ['model.ts','client.ts']){
   const text=await readFile(new URL('../'+file,import.meta.url),'utf8')
-  await writeFile(join(directory,file),text.replace("from './model'","from './model.ts'"))
+  await writeFile(join(directory,file),text.replaceAll("from './model'","from './model.ts'"))
 }
 const m=await import(pathToFileURL(join(directory,'model.ts')))
 const {loadAccounts}=await import(pathToFileURL(join(directory,'client.ts')))

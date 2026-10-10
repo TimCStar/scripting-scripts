@@ -77,3 +77,16 @@ export function todayUsage(account:AccountView,config:Config,now=Date.now(),time
  const percent=ratio!==null&&Number.isFinite(ratio)?`${Math.round(ratio*10)/10}%`:'—'
  return `今日用量：${percent} / ${money(amount)}`
 }
+
+/** Only a failed read falling back to previously read data is an old snapshot.
+ * Sample age remains metadata; expired monetary windows stay independently guarded. */
+export function snapshotNote(account:AccountView,window:Window,now=Date.now()):string {
+ if(account.error&&account.fetchedAt)return '旧快照'
+ return window.resetsAt&&Date.parse(window.resetsAt)<=now?'待更新':''
+}
+export function accountRequestStatus(account:AccountView,current=false):string {
+ const prefix=current?'本次':'上次'
+ if(account.error)return `${prefix}请求失败：${account.error}${account.fetchedAt?' · 旧快照':' · 暂无可用数据'}`
+ if(account.requestErrors?.length)return `${prefix}部分请求失败：${account.requestErrors.join('；')}`
+ return account.fetchedAt?`${prefix}请求成功`:'尚未请求'
+}

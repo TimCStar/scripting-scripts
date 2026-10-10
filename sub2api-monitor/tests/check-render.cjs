@@ -16,7 +16,7 @@ function render(family,count,decoder='embedded',invalid=false,fixture='default')
   for(const clock of clocks){assert.equal(clock.children[1].type,'Text');assert.match(clock.children[1].children.join(''),/^(?:—|<1m|\d+m|\d+h\d+m|\d+d\d+h)$/)}
   assert.ok(!nodes.some(n=>n.type==='Text'&&n.children.some(c=>typeof c==='string'&&c.includes('重置于'))),'Widget no longer contains absolute reset labels');
   if(fixture==='bothUnknown'){assert.equal(meters.length,0);assert.ok(!nodes.some(n=>n.type==='Text'&&n.children.includes('额度未提供')))}
-  if(fixture==='bothStale')assert.equal(meters.length,count*2);
+  if(fixture==='bothStale'){assert.equal(meters.length,count*2);assert.ok(!nodes.some(n=>n.type==='Text'&&n.children.some(c=>typeof c==='string'&&c.includes('旧快照'))),'An aged successful sample must not display the fallback label')}
   const resetLinks=nodes.filter(n=>n.type==='Link');
   const roomy=family==='systemMedium'&&count===1||family==='systemLarge'&&count<=2;
   assert.equal(resetLinks.length,!invalid&&roomy?1:0,'Preserve existing roomy OpenAI reset review link');

@@ -29,9 +29,9 @@ export function ResetPanel(){
  async function load(){if(panelBusy)return;panelBusy=true;setBusy(true);try{
   const config=readConfig()
   if(config.demo){setAccounts(makeDemo().map(account=>({account,eligible:false,reason:'演示账号不能执行操作'})));setMessage('演示视图：重置操作不可用。');return}
-  const connection=savedConnection();const results:ResetAccount[]=[];const records:Record<string,Receipt|null>={}
-  for(const id of connection.config.accountIDs){try{results.push(await inspectResetAccount(connection.config,connection.auth,id,fetch));records[String(id)]=store.read(receiptKey(connection.config.baseURL,id))}catch{setMessage(`账号 #${id} 读取失败或操作记录不可用，请检查设置`)} }
-  setAccounts(results);setReceipts(records);setMessage(`已读取 ${results.length} 个账号；重置券仍是服务器缓存，不保证实时可用。`)
+  const connection=savedConnection();const results:ResetAccount[]=[];const records:Record<string,Receipt|null>={};const failures:string[]=[]
+  for(const id of connection.config.accountIDs){try{results.push(await inspectResetAccount(connection.config,connection.auth,id,fetch));records[String(id)]=store.read(receiptKey(connection.config.baseURL,id))}catch{failures.push(`账号 #${id}：连接/请求失败或本机操作记录不可用，请检查设置`)} }
+  setAccounts(results);setReceipts(records);setMessage(`${failures.length?(results.length?'本次部分读取失败':'本次读取失败'):'本次请求成功'} · 已读取 ${results.length} 个账号；重置券仍是服务器缓存，不保证实时可用。${failures.length?'\n'+failures.join('\n'):''}`)
  }catch(e){setMessage(e instanceof Error?e.message:'读取失败')}finally{panelBusy=false;setBusy(false)}}
  async function reset(id:number){if(panelBusy)return;panelBusy=true;setBusy(true);try{
   const connection=savedConnection()

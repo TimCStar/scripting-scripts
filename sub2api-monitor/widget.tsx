@@ -1,6 +1,6 @@
 import { Widget, VStack, HStack, Text, Spacer, ProgressView, Button, Image, Link, Script, fetch } from 'scripting'
-import { barPercent, isStale, makeDemo, selectWidgetIDs, widgetLayout, type AccountView, type Window, type Config, type Layout } from './model'
-import {displayName,windowDollars,visibleWindows,countdown,updateFooter,todayUsage} from './display'
+import { barPercent, makeDemo, selectWidgetIDs, widgetLayout, type AccountView, type Window, type Config, type Layout } from './model'
+import {displayName,windowDollars,visibleWindows,countdown,updateFooter,todayUsage,snapshotNote} from './display'
 import {ProviderIcon,preloadProviderIcons,type ProviderImages} from './provider-icons'
 import { refreshMonitor } from './refresh'
 import { readConfig, readCache, identity } from './state'
@@ -14,17 +14,12 @@ const meterColor = {light:'#48484A',dark:'#D1D1D6'}
 const small = Widget.family === 'systemSmall'
 const large = Widget.family === 'systemLarge'
 let now = Date.now()
-/** Stale snapshots are neutral metadata; 0% is never a warning by itself. */
-function snapshotNote(w:Window,c:Config):string {
-  if(w.resetsAt&&Date.parse(w.resetsAt)<=now)return '待更新'
-  return isStale(w.updatedAt,c.staleMinutes,now)?'旧快照':''
-}
 type MeterType = {label:number;value:number;detail:number;clock:number;gap:number;note:number}
 // Two compositions, not a hidden row in the same two-window card. The single
 // window gets the available width; the label leads and the percentage is a peer.
 // Extra space goes to readable details instead of an oversized percentage.
-function WindowReading({window:w,config:c,type:t}:{window:Window;config:Config;type:MeterType}) {
-  const note=snapshotNote(w,c)
+function WindowReading({window:w,config:c,type:t,account}:{window:Window;config:Config;type:MeterType;account:AccountView}) {
+  const note=snapshotNote(account,w,now)
   return <VStack alignment="leading" spacing={t.gap} frame={{maxWidth:'infinity'}}>
     <HStack alignment="firstTextBaseline" spacing={3}>
       <Text font={t.label} fontWeight="bold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.8}>{w.label}</Text>
@@ -40,23 +35,23 @@ function WindowReading({window:w,config:c,type:t}:{window:Window;config:Config;t
     </HStack>
   </VStack>
 }
-function SingleWindow({window,config,mode}:{window:Window;config:Config;mode:Layout}) {
+function SingleWindow({window,config,mode,account}:{window:Window;config:Config;mode:Layout;account:AccountView}) {
   const type:MeterType=mode==='largeOne'?{label:32,value:30,detail:22,clock:20,gap:10,note:13}
     :mode==='largeRows'?{label:17,value:16,detail:10,clock:9,gap:0,note:9}
     :mode==='small'?{label:22,value:21,detail:11,clock:10,gap:2,note:10}
     :mode==='mediumTwo'?{label:22,value:21,detail:12,clock:11,gap:2,note:10}
     :mode==='mediumOne'?{label:24,value:23,detail:15,clock:14,gap:3,note:11}
     :{label:26,value:25,detail:15,clock:14,gap:5,note:11}
-  return <VStack alignment="leading" spacing={0} frame={{maxWidth:'infinity'}}><WindowReading window={window} config={config} type={type}/></VStack>
+  return <VStack alignment="leading" spacing={0} frame={{maxWidth:'infinity'}}><WindowReading account={account} window={window} config={config} type={type}/></VStack>
 }
-function DualWindows({windows,config,mode}:{windows:Window[];config:Config;mode:Layout}) {
+function DualWindows({windows,config,mode,account}:{windows:Window[];config:Config;mode:Layout;account:AccountView}) {
   const compact=mode==='small'||mode==='mediumTwo'
   const dense=mode==='largeRows'
   const type:MeterType=mode==='largeOne'?{label:25,value:24,detail:18,clock:16,gap:5,note:12}
     :compact?{label:13,value:13,detail:9,clock:8,gap:0,note:9}
     :dense?{label:15,value:14,detail:10,clock:9,gap:0,note:9}
     :{label:20,value:19,detail:12,clock:11,gap:mode==='mediumOne'?1:3,note:10}
-  const readings=windows.map((w,i)=><WindowReading key={String(i)} window={w} config={config} type={type}/>)
+  const readings=windows.map((w,i)=><WindowReading account={account} key={String(i)} window={w} config={config} type={type}/>)
   // Narrow cards stack windows; wide cards pair them. Neither branch leaves an
   // empty second column or a 5h-sized placeholder after 5h is hidden.
   return compact||mode==='largeOne'?<VStack spacing={compact?0:18} frame={{maxWidth:'infinity'}}>{readings}</VStack>
@@ -66,14 +61,14 @@ function AccountCard({account:a,config:c,mode,images}:{account:AccountView;confi
   const windows=visibleWindows(a,c),solo=windows.length===1
   const dense=mode==='largeRows',big=mode==='largeOne',compact=mode==='small'||mode==='mediumTwo'
   const roomy=big||mode==='largeTwo'||mode==='mediumOne'
-  const status=a.error?'连接异常':a.status!=='active'&&a.status!=='未知'?'账号异常':''
+  const status=a.error?'连接异常':a.requestErrors?.length?'部分请求失败':a.status!=='active'&&a.status!=='未知'?'账号异常':''
   const header=<HStack spacing={dense?5:7} padding={{trailing:24}}>
     <ProviderIcon images={images} provider={a.provider} size={big?40:dense?20:compact?24:28}/>
     <Text font={big?23:dense?14:compact?15:17} fontWeight="semibold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.75}>{displayName(a,c.displayNames)}</Text>
     {status?<Text font={dense||compact?9:11} foregroundStyle={warning} lineLimit={1}>{compact||dense?'异常':status}</Text>:null}<Spacer/>
     {roomy&&a.provider==='openai'&&a.resetCredits?<Link url={Script.createRunSingleURLScheme(Script.name,{action:'reset',accountID:String(a.id)})}><Text font={big?14:12} foregroundStyle={foreground}>重置…</Text></Link>:null}
   </HStack>
-  const meters=solo?<SingleWindow window={windows[0]} config={c} mode={mode}/>:windows.length?<DualWindows windows={windows} config={c} mode={mode}/>:<Text font={big?16:12} foregroundStyle={muted} lineLimit={2}>{a.error?'暂时无法读取额度':'暂无额度快照'}</Text>
+  const meters=solo?<SingleWindow account={a} window={windows[0]} config={c} mode={mode}/>:windows.length?<DualWindows account={a} windows={windows} config={c} mode={mode}/>:<Text font={big?16:12} foregroundStyle={muted} lineLimit={2}>{a.error?'暂时无法读取额度':'暂无额度快照'}</Text>
   const credits=a.resetCredits
   const creditLine=roomy&&!(mode==='mediumOne'&&solo)&&credits&&credits.available!==null?<Text font={big?14:11} foregroundStyle={muted} lineLimit={1}>重置券 {credits.available} 次 · 缓存</Text>:null
   const data=<VStack alignment="leading" spacing={big?12:mode==='mediumOne'?2:3} frame={{maxWidth:'infinity'}}>{meters}{creditLine}</VStack>
