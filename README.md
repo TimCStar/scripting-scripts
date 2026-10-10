@@ -15,6 +15,18 @@
 
 自动测试和静态检查已通过；尚未完成真实 iPhone、真实服务器连接与真实重置验证。不要为了测试而消耗真实重置券。
 
+### [Komari 夜航](komari-monitor/README.md)
+
+Komari VPS 监控：小、中、大号主屏幕组件显示选中的 VPS；打开脚本进入全部节点总览，支持搜索、分组、状态筛选和逐台详情。原生深浅色界面，包含资源水位、网速、运行时间、历史曲线与机器档案。
+
+- [导入安装包](komari-monitor/dist/Komari-Nightflight.scripting)：下载原始文件，在 iPhone「分享 → Scripting」导入。
+- [安装与使用说明](komari-monitor/README.md)
+- [源码压缩包](komari-monitor/dist/Komari-Nightflight-source.zip)
+- [设计预览](komari-monitor/assets/design-preview.png)：由 TSX 生成的浏览器近似，非 iOS 截图。
+- [验证记录](komari-monitor/VERIFICATION.md)
+
+默认展示明确标记的虚构演示数据。自动测试与核心类型检查通过；真实 iPhone／Scripting 和真实 Komari 服务器尚未验证。
+
 ## 仓库约定
 
 - 每个脚本使用独立目录，说明入口为该目录下的 `README.md`。

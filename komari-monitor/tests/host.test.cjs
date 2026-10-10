@@ -1,0 +1,220 @@
+const { test } = require('node:test'),
+  a = require('node:assert/strict'),
+  { harness, walk } = require('../tools/harness.cjs')
+function setup(options = {}) {
+  const h = harness(options),
+    m = h.load('model.ts'),
+    c = {
+      ...m.defaultConfig(),
+      demo: false,
+      baseURL: 'https://example.com',
+      revision: 'r1',
+    }
+  h.data.set('komari.config.v1', c)
+  return { h, m, c, s: h.load('state.ts') }
+}
+function fetcher(h, { fail = false, change = false } = {}) {
+  let count = 0
+  h.bridge.fetch = async (url, init) => {
+    count++
+    if (fail) throw Error('network failed fixture token')
+    const r = JSON.parse(init.body)
+    if (change)
+      h.data.set('komari.config.v1', {
+        ...h.data.get('komari.config.v1'),
+        revision: 'r2',
+      })
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        jsonrpc: '2.0',
+        id: r.id,
+        result:
+          r.method === 'common:getNodes'
+            ? { n1: { uuid: 'n1', name: 'Fresh' } }
+            : r.method === 'common:getNodesLatestStatus'
+              ? { n1: { cpu: 0, online: true, time: new Date().toISOString() } }
+              : { records: [] },
+      }),
+    }
+  }
+  return () => count
+}
+test('demo widget has no network/keychain requirement', async () => {
+  const h = harness()
+  h.load('widget.tsx')
+  await h.globals.completion
+  a.ok(h.result.view)
+  a.ok(
+    walk(h.result.view).some(
+      (n) => n.type === 'Text' && n.children.join('').includes('演示'),
+    ),
+  )
+  a.equal(h.keys.size, 0)
+})
+test('failure keeps original sampling time and greys out cached online status', async () => {
+  const { h, s, c, m } = setup()
+  const count = fetcher(h)
+  const fresh = await s.refresh(c)
+  a.equal(count(), 2)
+  a.equal(fresh.nodes[0].status.cpu, 0)
+  fetcher(h, { fail: true })
+  const old = await s.refresh(c)
+  a.equal(old.fetchedAt, fresh.fetchedAt)
+  a.equal(old.cached, true)
+  a.equal(m.state(old.nodes[0], old.cached), 'unknown')
+  a.ok(!old.notice.includes('fixture token'))
+})
+test('credential is bound to exact site and never stored in snapshot', async () => {
+  const { h, s, c } = setup()
+  s.saveConfig(c, 'fixture-secret')
+  a.equal(s.readToken(c), 'fixture-secret')
+  a.equal(s.readToken({ ...c, baseURL: 'https://another.example.com' }), '')
+  fetcher(h)
+  await s.refresh(c)
+  a.ok(!JSON.stringify(h.data.get(s.CACHE_KEY)).includes('fixture-secret'))
+  a.ok([...h.keys.values()][0].includes('fixture-secret'))
+})
+test('configuration change during request discards response and forbids cache write', async () => {
+  const { h, s, c } = setup()
+  fetcher(h, { change: true })
+  const result = await s.refresh(c)
+  a.equal(result.nodes.length, 0)
+  a.ok(result.notice.includes('配置已改变'))
+  a.equal(h.data.get(s.CACHE_KEY), undefined)
+})
+test('same-host duplicate refresh shares one request sequence', async () => {
+  const { h, s, c } = setup()
+  const count = fetcher(h)
+  const results = await Promise.all([s.refresh(c), s.refresh(c)])
+  a.equal(count(), 2)
+  a.equal(results[0].fetchedAt, results[1].fetchedAt)
+})
+test('invalid widget parameter makes no network request', async () => {
+  const { h, s, c } = setup()
+  const count = fetcher(h)
+  const result = await s.refresh(c, 'systemSmall', 'https://evil')
+  a.equal(count(), 0)
+  a.equal(result.nodes.length, 0)
+  a.match(result.notice, /UUID/)
+})
+test('storage failure preserves visible successful response and reports limitation', async () => {
+  const { h, s, c } = setup({ failStorage: true })
+  fetcher(h)
+  const result = await s.refresh(c)
+  a.equal(result.nodes.length, 1)
+  a.match(result.notice, /缓存保存失败/)
+  a.equal(h.data.get(s.CACHE_KEY), undefined)
+})
+test('App Intent ignores stale revision and otherwise refreshes before reloading widgets', async () => {
+  const { h, c } = setup()
+  const count = fetcher(h),
+    intent = h
+      .load('app_intents.tsx')
+      .RefreshKomariIntent({
+        family: 'systemSmall',
+        parameter: 'n1',
+        revision: 'r0',
+      })
+  await intent.definition.perform(intent.params)
+  a.equal(count(), 0)
+  await intent.definition.perform({ ...intent.params, revision: c.revision })
+  a.equal(count(), 3)
+  a.equal(h.result.reloads, 1)
+})
+for (const family of ['systemSmall', 'systemMedium', 'systemLarge'])
+  for (
+    let count = 1;
+    count <= { systemSmall: 1, systemMedium: 2, systemLarge: 4 }[family];
+    count++
+  )
+    test(`${family}: ${count} selected nodes, native link destinations and explicit sampling footer`, async () => {
+      const h = harness({
+        family,
+        width: family === 'systemSmall' ? 155 : 329,
+        height: family === 'systemLarge' ? 345 : 155,
+      })
+      h.load('widget.tsx')
+      await h.globals.completion
+      const { WidgetView } = h.load('widget.tsx'),
+        m = h.load('model.ts'),
+        snapshot = m.demoSnapshot(),
+        ids = snapshot.nodes.slice(0, count).map((n) => n.id),
+        view = WidgetView({ snapshot, family, ids, name: 'Renamed Script' }),
+        nodes = walk(view),
+        texts = nodes
+          .filter((n) => n.type === 'Text')
+          .map((n) => n.children.join(''))
+      a.equal(view.props.frame.width, h.bridge.Widget.displaySize.width)
+      a.ok(view.props.widgetBackground.light)
+      a.ok(view.props.widgetBackground.dark)
+      for (const n of snapshot.nodes.slice(0, count))
+        a.ok(texts.includes(n.name))
+      a.ok(texts.some((t) => t.includes('演示') && t.includes('采样')))
+      a.equal(
+        nodes.filter((n) => n.type === 'Button').length,
+        family === 'systemSmall' ? 0 : 1,
+      )
+      if (family === 'systemSmall') {
+        a.match(view.props.widgetURL, /Renamed%20Script/)
+        a.equal(nodes.filter((n) => n.type === 'Link').length, 0)
+      } else {
+        const links = nodes.filter((n) => n.type === 'Link')
+        a.equal(
+          links.filter((n) => n.props.url.includes('?node=')).length,
+          count,
+        )
+        a.ok(links.some((n) => !n.props.url.includes('?node=')))
+      }
+      a.ok(
+        !nodes.some(
+          (n) =>
+            n.type === 'Text' && n.children.some((c) => typeof c === 'object'),
+        ),
+        'Text must contain primitive children',
+      )
+    })
+test('main entry opens all VPS and detail deep link keeps path back to fleet', async () => {
+  const h = harness()
+  h.load('index.tsx')
+  await h.globals.completion
+  a.equal(h.result.exited, true)
+  a.ok(
+    walk(h.result.page).some(
+      (n) => n.type === 'Text' && n.children.join('') === '全部节点',
+    ),
+  )
+  const d = harness()
+  d.bridge.Script.queryParameters.node = 'demo-1'
+  d.load('index.tsx')
+  await d.globals.completion
+  a.ok(
+    walk(d.result.page).some(
+      (n) => n.type === 'Text' && n.children.join('').includes('全部 VPS 监控'),
+    ),
+  )
+})
+test('page polling schedules once and leaving prevents further requests', async () => {
+  const { h } = setup()
+  let timer,
+    cleared = false
+  h.globals.setTimeout = (fn) => {
+    timer = fn
+    return 1
+  }
+  h.globals.clearTimeout = (id) => {
+    a.equal(id, 1)
+    cleared = true
+  }
+  const count = fetcher(h),
+    monitor = h.load('monitor.tsx').useMonitor()
+  monitor.appear()
+  await new Promise((resolve) => setImmediate(resolve))
+  a.equal(count(), 2)
+  a.equal(typeof timer, 'function')
+  monitor.disappear()
+  a.equal(cleared, true)
+  await timer()
+  a.equal(count(), 2)
+})
