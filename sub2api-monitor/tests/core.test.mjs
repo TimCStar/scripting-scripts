@@ -34,8 +34,8 @@ test('all requests use HTTPS GET, decline redirects, bounded known paths',async(
  const calls=[]; const config={...m.DEFAULT_CONFIG,demo:false,baseURL:'https://example.org',accountIDs:[1]}
  const fetcher=async(url,options)=>{calls.push({url,options});return{ok:true,status:200,json:async()=>({code:0,data:url.includes('groups/')?[{id:1,name:'开发'}]:url.endsWith('today-stats')?stats:raw})}}
  const r=await loadAccounts(config,{kind:'apiKey',token:'TEST_ONLY'},fetcher)
- assert.equal(r.accounts[0].id,1);assert.equal(calls.length,1)
- for(const call of calls){assert.equal(call.options.method,'GET');assert.equal(await call.options.handleRedirect(),null);assert.equal(call.options.headers['x-api-key'],'TEST_ONLY');assert.ok(!call.url.includes('usage'));assert.ok(!call.url.includes('TEST_ONLY'))}
+ assert.equal(r.accounts[0].id,1);assert.equal(calls.length,2)
+ for(const call of calls){assert.equal(call.options.method,'GET');assert.equal(await call.options.handleRedirect(),null);assert.equal(call.options.headers['x-api-key'],'TEST_ONLY');assert.ok(!call.url.includes('/1/usage'));assert.ok(!call.url.includes('today-stats'));assert.ok(!call.url.includes('TEST_ONLY'))}
  assert.ok(!JSON.stringify(r).includes('TEST_ONLY'));assert.ok(!JSON.stringify(r).includes('NEVER_CACHE'))
 })
 test('401 keeps previous account snapshot and does not leak server errors',async()=>{
@@ -43,7 +43,7 @@ test('401 keeps previous account snapshot and does not leak server errors',async
  const r=await loadAccounts({...m.DEFAULT_CONFIG,baseURL:'https://example.org',accountIDs:[1]}, {kind:'jwt',token:'SECRET'},async()=>({ok:false,status:401,json:async()=>({error:'SECRET'})}),[previous])
  assert.equal(r.accounts[0].windows[0].percent,125);assert.equal(r.accounts[0].fetchedAt,previous.fetchedAt);assert.equal(r.accounts[0].error,'管理凭证失效或权限不足');assert.ok(!JSON.stringify(r).includes('SECRET'))
 })
-test('unused today statistics are not fetched or reported as errors',async()=>{
+test('missing today aggregate remains unknown without erasing account quota',async()=>{
  const r=await loadAccounts({...m.DEFAULT_CONFIG,baseURL:'https://example.org',accountIDs:[1]}, {kind:'apiKey',token:'TEST'},async(url)=>({ok:!url.endsWith('today-stats'),status:url.endsWith('today-stats')?500:200,json:async()=>({code:0,data:url.includes('groups/')?[]:raw})}))
  assert.equal(r.accounts[0].windows[0].percent,125);assert.equal(r.accounts[0].todayCost,null);assert.equal(r.accounts[0].error,undefined)
 })

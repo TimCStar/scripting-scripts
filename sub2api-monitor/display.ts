@@ -1,4 +1,4 @@
-import { safeText, money, isStale, type AccountView, type Window, type Config } from './model'
+import { safeText, money, isStale, localDay, nonnegative, type AccountView, type Window, type Config } from './model'
 /** Device-only aliases, never sent to Sub2API or used as account identifiers. */
 export function parseDisplayNames(text:string):Record<string,string> {
   let source:unknown
@@ -33,13 +33,18 @@ export function windowDollars(window:Window,config:Config,now=Date.now()):string
  return usageDollars(window.usedUSD,isStale(window.updatedAt,config.staleMinutes,now)?null:window.estimatedTotalUSD)
 }
 
-/** Absolute reset date in the device's local time; no redundant explanatory label. */
+/** Compact absolute timestamp in device local time, shared by reset and update labels. */
 export function resetTime(at:string|null|undefined):string {
   if(!at)return '—'
   const date=new Date(at)
   if(!Number.isFinite(date.getTime()))return '—'
   const pad=(n:number)=>String(n).padStart(2,'0')
   return `${date.getMonth()+1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+/** Keep the reset label separate so the update footer never gains a reset prefix. */
+export function resetLabel(at:string|null|undefined):string {
+  return `重置于 ${resetTime(at)}`
 }
 
 /** Oldest successful read among the displayed accounts. Global cache write time can
@@ -52,4 +57,15 @@ export function oldestSuccessfulRead(accounts:AccountView[]):string|null {
 }
 export function updateFooter(accounts:AccountView[]):string {
   return `更新于：${resetTime(oldestSuccessfulRead(accounts))}`
+}
+
+/** Daily percent is today's local account cost / valid estimated weekly total. */
+export function todayUsage(account:AccountView,config:Config,now=Date.now(),timeZone?:string):string {
+ const day=localDay(now,timeZone),sample=Date.parse(account.todayUpdatedAt||'')
+ const valid=day&&account.todayDate===day.date&&account.todayTimeZone===day.timeZone&&Number.isFinite(sample)&&sample<=now&&localDay(sample,day.timeZone)?.date===day.date&&!isStale(account.todayUpdatedAt!,config.staleMinutes,now)&&!account.error
+ const amount=valid?nonnegative(account.todayCost):null
+ const w=account.windows.find(w=>w.label==='7d'),total=w?.estimatedTotalUSD
+ const ratio=amount!==null&&w?.costStatus==='complete'&&w.resetsAt&&Date.parse(w.resetsAt)>now&&!isStale(w.updatedAt,config.staleMinutes,now)&&typeof total==='number'&&Number.isFinite(total)&&total>0?amount/total*100:null
+ const percent=ratio!==null&&Number.isFinite(ratio)?`${Math.round(ratio*10)/10}%`:'—'
+ return `今日用量：${percent} / ${money(amount)}`
 }

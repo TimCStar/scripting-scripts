@@ -1,4 +1,4 @@
-import { normalizeAccount, nonnegative, estimatedTotalCost, sevenDayCostStart, accountLogCost, isStale, type Window, type AccountView, type Config } from './model'
+import { normalizeAccount, localDay, nonnegative, estimatedTotalCost, sevenDayCostStart, accountLogCost, isStale, type Window, type AccountView, type Config } from './model'
 export type FetchLike = (url: string, options: {method:string;headers:Record<string,string>;timeout:number;handleRedirect:()=>Promise<null>}) => Promise<{ok:boolean;status:number;json:()=>Promise<unknown>}>
 export type Auth = { kind: 'apiKey' | 'jwt'; token: string }
 export type LoadResult = { accounts: AccountView[]; fetchedAt: string; errors: Record<string,string> }
@@ -28,6 +28,7 @@ export async function loadAccounts(config: Config, auth: Auth, fetcher: FetchLik
         const weekly=account.windows.find(w=>w.label==='7d')
         if(weekly) await attachSevenDayCost(weekly,id,get,config.staleMinutes)
       }
+      await attachTodayCost(account,get)
       return account
     } catch (error) {
       const message = error instanceof Error && /^(管理凭证|接口|服务器|账号响应)/.test(error.message) ? error.message : '网络连接失败'
@@ -87,4 +88,17 @@ export async function attachSevenDayCost(window:Window,id:number,get:(path:strin
     window.estimatedTotalUSD=isStale(window.updatedAt,staleMinutes,now)?null:estimatedTotalCost(cost,window.percent)
     window.costStatus='complete'
   }catch { /* Keep other account metrics and omit unverified quota dollars. */ }
+}
+
+/** Today uses local recorded account cost, never provider probes or user-billed cost. */
+export async function attachTodayCost(account:AccountView,get:(path:string)=>Promise<unknown>,now=Date.now(),timeZone?:string):Promise<void> {
+  account.todayCost=null;delete account.todayDate;delete account.todayTimeZone;delete account.todayUpdatedAt
+  const day=localDay(now,timeZone),wallStart=Date.now()
+  if(!day)return
+  try {
+    const stats=object(await get(`usage/stats?account_id=${account.id}&start_date=${day.date}&end_date=${day.date}&timezone=${encodeURIComponent(day.timeZone)}&nocache=true`))
+    const cost=nonnegative(stats.total_account_cost),finished=now+(Date.now()-wallStart)
+    if(cost===null||localDay(finished,day.timeZone)?.date!==day.date)return
+    account.todayCost=cost;account.todayDate=day.date;account.todayTimeZone=day.timeZone;account.todayUpdatedAt=new Date(finished).toISOString()
+  }catch { /* A failed statistic is unknown, not zero or a new timestamp on old cost. */ }
 }

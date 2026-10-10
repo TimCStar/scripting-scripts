@@ -4,12 +4,24 @@ export type Window = { label: string; percent: number | null; resetsAt: string |
 export type AccountView = {
   id: number; name: string; provider: Provider; groups: string[]; status: string;
   windows: Window[]; todayCost: number | null; todayTokens: number | null; todayRequests?: number | null;
+  todayDate?: string; todayTimeZone?: string; todayUpdatedAt?: string;
   resetCredits?: {available:number|null;expiresAt:string|null;automatic:boolean|null;state:string|null;stateAt:string|null};
   estimate: string; fetchedAt: string; error?: string
 }
 export type Config = { version: 1; baseURL: string; accountIDs: number[]; demo: boolean; refreshMinutes: number; staleMinutes: number; revision?:string; displayNames?:Record<string,string>; fiveHourVisibility?:Record<string,'auto'|'show'|'hide'>; referenceCaps?: Record<string, {fiveHour?:number;sevenDay?:number}> }
 export const DEFAULT_CONFIG: Config = { version: 1, baseURL: '', accountIDs: [], demo: true, refreshMinutes: 20, staleMinutes: 60 }
 export const CACHE_VERSION = 2
+/** Calendar-day identity in the device IANA timezone. No UTC/server-day fallback. */
+export function localDay(now=Date.now(),timeZone?:string):{date:string;timeZone:string}|null {
+  try {
+    const zone=timeZone??Intl.DateTimeFormat().resolvedOptions().timeZone
+    if(!zone)return null
+    const parts=new Intl.DateTimeFormat('en-US',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(now))
+    const part=(type:string)=>parts.find(p=>p.type===type)?.value
+    const date=`${part('year')}-${part('month')}-${part('day')}`
+    return /^\d{4}-\d{2}-\d{2}$/.test(date)?{date,timeZone:zone}:null
+  }catch{return null}
+}
 export function finite(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
@@ -127,7 +139,7 @@ export function makeDemo(now = Date.now()): AccountView[] {
     {id:102,name:'日常写作',platform:'anthropic',group_ids:[2],status:'active',session_window_end:new Date(now+74*60_000).toISOString(),extra:{session_window_utilization:.71,passive_usage_7d_utilization:.43,passive_usage_7d_reset:(now+2*86400_000)/1000,passive_usage_sampled_at:sample}},
     {id:103,name:'实验账号',platform:'antigravity',group_ids:[3],status:'active',extra:{}},
     {id:104,name:'备用账号',platform:'openai',group_ids:[1],status:'active',extra:{codex_5h_used_percent:12,codex_7d_used_percent:25,codex_5h_reset_at:new Date(now+202*60_000).toISOString(),codex_7d_reset_at:new Date(now+5*86400_000).toISOString(),codex_usage_updated_at:sample}}
-  ].map((a,i)=>normalizeAccount(a,{cost:[1.82,3.46,.58,.19][i],tokens:[182400,341200,64000,21400][i],requests:[84,127,42,11][i]},{'1':'开发','2':'写作','3':'研究'},now)).map((a,i)=>{ for(const w of a.windows) if(w.label==='7d'&&a.provider==='openai') Object.assign(w,{usedUSD:[124,0,0,30][i],estimatedTotalUSD:[200,0,0,120][i],costStatus:'complete'}); return a })
+  ].map((a,i)=>normalizeAccount(a,{cost:[1.82,3.46,.58,.19][i],tokens:[182400,341200,64000,21400][i],requests:[84,127,42,11][i]},{'1':'开发','2':'写作','3':'研究'},now)).map((a,i)=>{ for(const w of a.windows) if(w.label==='7d'&&a.provider==='openai') Object.assign(w,{usedUSD:[124,0,0,30][i],estimatedTotalUSD:[200,0,0,120][i],costStatus:'complete'}); const day=localDay(now);if(day)Object.assign(a,{todayDate:day.date,todayTimeZone:day.timeZone,todayUpdatedAt:new Date(now).toISOString()});return a })
 }
 
 export function parseReferenceCaps(text: string): Record<string,{fiveHour?:number;sevenDay?:number}> {
@@ -156,7 +168,7 @@ export function validateCachedAccount(value:unknown):AccountView|null {
   if(!Number.isSafeInteger(a.id)||Number(a.id)<=0||!['openai','anthropic','antigravity','other'].includes(String(a.provider))||!Array.isArray(a.windows)||!Array.isArray(a.groups))return null
   const windows:Window[]=[]
   for(const entry of a.windows.slice(0,3)){const w=record(entry);if(typeof w.label!=='string'||(w.percent!==null&&nonnegative(w.percent)===null))return null;windows.push({label:safeText(w.label,'?',10),percent:nonnegative(w.percent),resetsAt:iso(w.resetsAt),updatedAt:iso(w.updatedAt),...(w.costStatus==='complete'?{usedUSD:nonnegative(w.usedUSD),estimatedTotalUSD:nonnegative(w.estimatedTotalUSD),costStatus:'complete' as const}:w.costStatus==='truncated'||w.costStatus==='unavailable'?{usedUSD:null,estimatedTotalUSD:null,costStatus:w.costStatus}:{} )})}
-  return {id:Number(a.id),name:safeText(a.name,'未命名账号',40),provider:a.provider as Provider,groups:a.groups.map(x=>safeText(x,'',30)).filter(Boolean).slice(0,3),status:safeText(a.status,'未知',20),windows,todayCost:nonnegative(a.todayCost),todayTokens:nonnegative(a.todayTokens),todayRequests:nonnegative(a.todayRequests),...(a.provider==='openai'&&a.resetCredits?{resetCredits:{available:nonnegative(record(a.resetCredits).available),expiresAt:iso(record(a.resetCredits).expiresAt),automatic:typeof record(a.resetCredits).automatic==='boolean'?record(a.resetCredits).automatic as boolean:null,state:typeof record(a.resetCredits).state==='string'?safeText(record(a.resetCredits).state,'',10):null,stateAt:iso(record(a.resetCredits).stateAt)}}:{}),estimate:safeText(a.estimate,'额度未提供'),fetchedAt:iso(a.fetchedAt)||'',...(typeof a.error==='string'?{error:safeText(a.error,'连接失败')}:{} )}
+  return {id:Number(a.id),name:safeText(a.name,'未命名账号',40),provider:a.provider as Provider,groups:a.groups.map(x=>safeText(x,'',30)).filter(Boolean).slice(0,3),status:safeText(a.status,'未知',20),windows,todayCost:nonnegative(a.todayCost),...(typeof a.todayDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(a.todayDate)&&typeof a.todayTimeZone==='string'&&a.todayTimeZone.length<=100&&iso(a.todayUpdatedAt)?{todayDate:a.todayDate,todayTimeZone:a.todayTimeZone,todayUpdatedAt:iso(a.todayUpdatedAt)!}:{}),todayTokens:nonnegative(a.todayTokens),todayRequests:nonnegative(a.todayRequests),...(a.provider==='openai'&&a.resetCredits?{resetCredits:{available:nonnegative(record(a.resetCredits).available),expiresAt:iso(record(a.resetCredits).expiresAt),automatic:typeof record(a.resetCredits).automatic==='boolean'?record(a.resetCredits).automatic as boolean:null,state:typeof record(a.resetCredits).state==='string'?safeText(record(a.resetCredits).state,'',10):null,stateAt:iso(record(a.resetCredits).stateAt)}}:{}),estimate:safeText(a.estimate,'额度未提供'),fetchedAt:iso(a.fetchedAt)||'',...(typeof a.error==='string'?{error:safeText(a.error,'连接失败')}:{} )}
 }
 
 export type Layout = 'small' | 'mediumOne' | 'mediumTwo' | 'largeOne' | 'largeTwo' | 'largeRows'

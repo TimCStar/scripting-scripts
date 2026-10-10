@@ -15,10 +15,10 @@ test('config persists device names and per-account 5h choices, not old manual ca
 test('5h auto/hide/show distinguishes missing observation and unknown without changing 7d',()=>{assert.equal(d.visibleWindows(a,m.DEFAULT_CONFIG).length,1);const shown=d.visibleWindows(a,{fiveHourVisibility:{1:'show'}});assert.equal(shown[0].percent,null);assert.equal(shown[0].label,'5h');const observed={...a,windows:[{label:'5h',percent:0},...a.windows]};assert.equal(d.visibleWindows(observed,{}).length,2);assert.equal(d.visibleWindows(observed,{fiveHourVisibility:{1:'hide'}}).length,1);assert.equal(d.visibleWindows({...a,provider:'antigravity'},{fiveHourVisibility:{1:'show'}}).length,1)})
 test('weekly dollars display actual used / estimated total without remaining wording',()=>{assert.equal(d.usageDollars(10,100),'$10.0 / $100.0');assert.equal(d.usageDollars(0,null),'$0.00 / —');assert.equal(d.usageDollars(null,null),'— / —')})
 test('expired/absent/incomplete amounts hidden; stale ratio keeps used but not estimate',()=>{const w=a.windows[0];assert.equal(d.windowDollars({...w,updatedAt:new Date(now-61*60000).toISOString()},m.DEFAULT_CONFIG,now),'$10.0 / —');assert.equal(d.windowDollars(w,m.DEFAULT_CONFIG,now),'$10.0 / $100.0');for(const patch of [{resetsAt:new Date(now).toISOString()},{costStatus:'truncated'},{costStatus:undefined},{resetsAt:null}])assert.equal(d.windowDollars({...w,...patch},m.DEFAULT_CONFIG,now),'— / —')})
-test('widget source omits removed metadata and fake provider symbols',async()=>{const w=await readFile(new URL('../widget.tsx',import.meta.url),'utf8');for(const text of ['SUB2API','a.groups','todayCost','todayTokens','systemName','估算余','参考余','b.name'])assert.ok(!w.includes(text),text);assert.ok(w.includes('<ProviderIcon'));assert.ok(w.includes('windowDollars(w,c,now)'));const form=await readFile(new URL('../index.tsx',import.meta.url),'utf8');assert.ok(!form.includes('JSON 参考值'));assert.ok(form.includes('显示名称（留空使用服务器名称）'))})
+test('widget source omits removed metadata and fake provider symbols',async()=>{const w=await readFile(new URL('../widget.tsx',import.meta.url),'utf8');for(const text of ['SUB2API','a.groups','todayTokens','systemName','估算余','参考余','b.name'])assert.ok(!w.includes(text),text);assert.ok(w.includes('<ProviderIcon'));assert.ok(w.includes('windowDollars(w,c,now)'));const form=await readFile(new URL('../index.tsx',import.meta.url),'utf8');assert.ok(!form.includes('JSON 参考值'));assert.ok(form.includes('显示名称（留空使用服务器名称）'))})
 test('cache schema reads and writes the exported version; credentials keys unchanged',async()=>{const state=await readFile(new URL('../state.ts',import.meta.url),'utf8');assert.ok(state.includes('value?.version !== CACHE_VERSION'));assert.ok(state.includes('version:CACHE_VERSION,identity'));assert.ok(state.includes("AUTH_KEY = 'sub2api.admin.v1'"));assert.ok(state.includes("CONFIG_KEY = 'sub2api.config.v1'"))})
 
-test('absolute reset time is compact local M/D HH:mm without any label',()=>{const date=new Date(2026,9,16,2,5);assert.equal(d.resetTime(date.toISOString()),'10/16 02:05');for(const at of [null,undefined,'','bad'])assert.equal(d.resetTime(at),'—')})
+test('shared absolute timestamp is compact local M/D HH:mm without any label',()=>{const date=new Date(2026,9,16,2,5);assert.equal(d.resetTime(date.toISOString()),'10/16 02:05');for(const at of [null,undefined,'','bad'])assert.equal(d.resetTime(at),'—')})
 
 test('footer uses oldest selected successful read; invalid and empty accounts show unknown',()=>{
  const first={...a,fetchedAt:'2026-10-09T10:01:00Z'},second={...a,id:2,fetchedAt:'2026-10-09T11:02:00Z'}
@@ -48,4 +48,8 @@ test('cache roundtrip and all-failed/mixed reads never freshen retained account 
    if(mixed)assert.notEqual(d.oldestSuccessfulRead([cached.accounts[1]]),previous[1].fetchedAt)
   }
  } finally {delete globalThis.Storage}
+})
+
+test('reset label explicitly prefixes valid and unknown reset times without changing footer',()=>{
+ const at=new Date(2026,11,31,23,59).toISOString();assert.equal(d.resetLabel(at),'重置于 12/31 23:59');for(const value of [null,undefined,'','bad'])assert.equal(d.resetLabel(value),'重置于 —');assert.ok(!d.updateFooter([{...a,fetchedAt:at}]).includes('重置于'))
 })

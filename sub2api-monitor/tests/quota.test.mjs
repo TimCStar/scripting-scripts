@@ -64,7 +64,7 @@ test('fresh load uses only account and local stats/logs for Claude and OpenAI, n
  const extra=platform==='openai'?{codex_7d_used_percent:25,codex_7d_reset_at:reset,codex_usage_updated_at:sample}:{passive_usage_7d_utilization:.25,passive_usage_7d_reset:Date.parse(reset)/1000,passive_usage_sampled_at:sample}
  const result=await loadAccounts({...m.DEFAULT_CONFIG,baseURL:'https://example.org',accountIDs:[1]}, {kind:'apiKey',token:'SECRET'},async(url,options)=>{calls.push(url);assert.equal(options.method,'GET');return {ok:true,status:200,json:async()=>({code:0,data:url.includes('usage/stats?')?{total_account_cost:20}:{id:1,platform,extra}})}})
  assert.equal(result.accounts[0].windows.find(w=>w.label==='7d').usedUSD,20)
- assert.equal(calls.length,2);assert.ok(calls.every(url=>!url.includes('today-stats')&&!url.includes('groups')&&!url.includes('/quota')&&!url.includes('/1/usage')))
+ assert.equal(calls.length,3);assert.ok(calls.every(url=>!url.includes('today-stats')&&!url.includes('groups')&&!url.includes('/quota')&&!url.includes('/1/usage')))
  assert.ok(!JSON.stringify(result).includes('SECRET'))
  }
 })
