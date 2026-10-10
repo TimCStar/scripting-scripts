@@ -1,7 +1,7 @@
 import { Widget } from 'scripting'
-import { today, type Family } from './model'
-import { readConfig, refresh } from './state'
-import { WidgetView } from './widget-view'
+import { today, upcoming, type Family } from './model'
+import { readConfig, refresh, loadLogos } from './state'
+import { WidgetView, widgetLimit } from './widget-view'
 async function run() {
   const config = readConfig(),
     snapshot = await refresh(config),
@@ -12,12 +12,19 @@ async function run() {
       : Widget.family === 'systemLarge'
         ? 'systemLarge'
         : 'systemMedium'
+  const date = today(config.zone)
+  await loadLogos(
+    config,
+    upcoming(snapshot.subscriptions, date, config.days)
+      .slice(0, widgetLimit(family, size.height))
+      .map((d) => d.subscription),
+  )
   Widget.present(
     <WidgetView
       snapshot={snapshot}
       config={config}
       family={family}
-      date={today(config.zone)}
+      date={date}
       width={size.width}
       height={size.height}
     />,

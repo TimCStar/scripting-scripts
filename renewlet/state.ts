@@ -1,4 +1,5 @@
 import { fetch, Widget } from 'scripting'
+import { clearLogos, prepareLogos } from './icons'
 import {
   RenewletClient,
   ClientError,
@@ -66,10 +67,16 @@ export function saveConnection(c: Config, secret?: Credential) {
     throw new ClientError('钥匙串保存失败')
   store(CONFIG, c)
   store(CACHE, null)
+  clearLogos()
   Widget.reloadAll()
 }
 export function client(c: Config) {
   return new RenewletClient(c.baseURL, credential(c), fetch as Fetcher)
+}
+export async function loadLogos(c: Config, list: Subscription[]) {
+  try {
+    await prepareLogos(c, list, credential(c))
+  } catch {}
 }
 export function initial(c = readConfig()): Snapshot {
   try {
@@ -203,6 +210,7 @@ export function forget(c: Config) {
   if (Keychain.get(key) !== null && !Keychain.remove(key))
     throw new ClientError('钥匙串移除失败')
   generation++
+  clearLogos()
   store(CACHE, null)
   store(CONFIG, { ...c, revision: String(Date.now()) })
   Widget.reloadAll()

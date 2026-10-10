@@ -2,13 +2,25 @@ import { VStack, HStack, Text, Image, Spacer, Link, Script } from 'scripting'
 import {
   upcoming,
   dueFor,
+  dueTypes,
   totals,
   priceLabel,
+  cycleLabel,
   type Snapshot,
   type Config,
   type Family,
 } from './model'
-import { palette, SubscriptionRow, Note, Countdown } from './ui'
+import { palette, SubscriptionRow, SubscriptionIcon, Note, tone } from './ui'
+
+export function widgetLimit(family: Family, height: number) {
+  return family === 'systemSmall'
+    ? 1
+    : family === 'systemLarge'
+      ? height >= 370
+        ? 6
+        : 5
+      : 3
+}
 export function WidgetView({
   snapshot,
   config,
@@ -26,9 +38,8 @@ export function WidgetView({
 }) {
   const small = family === 'systemSmall',
     large = family === 'systemLarge'
-  const all = upcoming(snapshot.subscriptions, date, config.days),
-    limit = small ? 1 : large ? (height < 370 ? 4 : 5) : 3,
-    rows = all.slice(0, limit),
+  const all = upcoming(snapshot.subscriptions, date, config.days)
+  const rows = all.slice(0, widgetLimit(family, height)),
     next = rows[0]
   const home = Script.createRunURLScheme(Script.name)
   const overdue = snapshot.subscriptions.filter(
@@ -42,35 +53,19 @@ export function WidgetView({
     >
       <VStack
         alignment="leading"
-        spacing={small ? 5 : large ? 10 : 5}
-        padding={{ horizontal: small ? 14 : 16, vertical: 12 }}
+        spacing={small ? 6 : 5}
+        padding={{ horizontal: small ? 12 : 14, vertical: 12 }}
         frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }}
       >
-        {small ? (
-          <HStack spacing={5}>
-            <Image
-              systemName="calendar.badge.clock"
-              font={11}
-              foregroundStyle={palette.accent}
-            />
-            <Text
-              font={10}
-              fontWeight="semibold"
-              foregroundStyle={palette.muted}
-            >
-              续订手札
-            </Text>
-            <Spacer />
-          </HStack>
-        ) : (
+        {!small ? (
           <Link url={home} frame={{ maxWidth: 'infinity' }}>
             <HStack>
               <Text
-                font={10}
+                font={large ? 14 : 10}
                 fontWeight="semibold"
-                foregroundStyle={palette.accent}
+                foregroundStyle={palette.ink}
               >
-                RENEWLET / 续订手札
+                即将到期
               </Text>
               <Spacer />
               <Text font={10} foregroundStyle={palette.muted}>
@@ -78,88 +73,134 @@ export function WidgetView({
               </Text>
             </HStack>
           </Link>
-        )}
+        ) : null}
         {!next ? (
           <VStack
-            alignment="leading"
-            spacing={7}
-            frame={{ maxHeight: 'infinity' }}
+            spacing={8}
+            frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }}
           >
             <Spacer />
             <Image
-              systemName={
-                snapshot.cached ? 'wifi.exclamationmark' : 'checkmark.seal'
-              }
+              systemName={snapshot.cached ? 'wifi.exclamationmark' : 'calendar'}
               font={24}
               foregroundStyle={palette.accent}
             />
             <Text
-              font={small ? 16 : 19}
+              font={small ? 14 : 16}
               fontWeight="semibold"
               foregroundStyle={palette.ink}
             >
-              {snapshot.cached ? '同步暂未完成' : '给未来留点余白。'}
+              {snapshot.cached ? '同步未完成' : '暂无即将到期订阅'}
             </Text>
-            <Text font={11} foregroundStyle={palette.muted}>
-              {snapshot.notice || `未来 ${config.days} 天没有待续订项目`}
+            <Text font={10} foregroundStyle={palette.muted} lineLimit={2}>
+              {snapshot.notice || `未来 ${config.days} 天内无到期项目`}
             </Text>
             <Spacer />
           </VStack>
         ) : small ? (
           <VStack
             alignment="leading"
-            spacing={4}
-            frame={{ maxHeight: 'infinity' }}
+            spacing={6}
+            frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }}
           >
-            <Text
-              font={14}
-              fontWeight="semibold"
-              foregroundStyle={palette.ink}
-              lineLimit={1}
-              minScaleFactor={0.6}
-            >
-              {next.subscription.name}
-            </Text>
-            <Countdown d={next} compact />
-            <Spacer />
-            <Text
-              font={11}
-              foregroundStyle={palette.ink}
-              monospacedDigit
-              lineLimit={1}
-              minScaleFactor={0.7}
-            >
-              {priceLabel(next.subscription)}
-            </Text>
-          </VStack>
-        ) : large ? (
-          <VStack
-            alignment="leading"
-            spacing={10}
-            frame={{ maxHeight: 'infinity' }}
-          >
-            <HStack>
-              <VStack alignment="leading" spacing={3}>
+            <HStack spacing={8}>
+              <SubscriptionIcon s={next.subscription} size={30} />
+              <VStack
+                alignment="leading"
+                spacing={3}
+                frame={{ maxWidth: 'infinity' }}
+              >
                 <Text
-                  font={23}
+                  font={12}
                   fontWeight="semibold"
                   foregroundStyle={palette.ink}
+                  lineLimit={1}
+                  minScaleFactor={0.7}
                 >
-                  下次，心中有数。
+                  {next.subscription.name}
                 </Text>
-                <Text font={10} foregroundStyle={palette.muted}>
-                  {overdue
-                    ? `${overdue} 笔逾期 · 打开确认`
-                    : '最近到期优先 · 自动与手动续订'}
+                <Text font={9} foregroundStyle={palette.muted} lineLimit={1}>
+                  最近到期
                 </Text>
               </VStack>
-              <Spacer />
-              <Image
-                systemName="calendar"
-                font={25}
-                foregroundStyle={palette.accent}
-              />
             </HStack>
+            <Spacer />
+            <HStack alignment="firstTextBaseline" spacing={3}>
+              <Text
+                font={36}
+                fontWeight="semibold"
+                foregroundStyle={tone(next)}
+                monospacedDigit
+              >
+                {next.days}
+              </Text>
+              <Text font={10} foregroundStyle={palette.muted}>
+                天
+              </Text>
+              <Spacer />
+              <VStack alignment="trailing" spacing={4}>
+                <Text
+                  font={12}
+                  fontWeight="medium"
+                  foregroundStyle={palette.ink}
+                  monospacedDigit
+                >
+                  {next.date.slice(5).replace('-', '/')}
+                </Text>
+                <Text font={9} foregroundStyle={palette.muted}>
+                  {dueTypes[next.type]}
+                </Text>
+              </VStack>
+            </HStack>
+            <HStack alignment="firstTextBaseline" spacing={3}>
+              <Text
+                font={14}
+                fontWeight="semibold"
+                foregroundStyle={palette.ink}
+                lineLimit={1}
+                minScaleFactor={0.65}
+                monospacedDigit
+              >
+                {priceLabel(next.subscription)}
+              </Text>
+              <Spacer />
+              <Text font={9} foregroundStyle={palette.muted} lineLimit={1}>
+                {cycleLabel(next.subscription)}
+              </Text>
+            </HStack>
+          </VStack>
+        ) : (
+          <VStack
+            alignment="leading"
+            spacing={large ? 6 : 4}
+            frame={{ maxWidth: 'infinity', maxHeight: 'infinity' }}
+          >
+            {large ? (
+              <HStack
+                padding={8}
+                background={palette.wash}
+                clipShape={{ type: 'rect', cornerRadius: 12 }}
+              >
+                <VStack alignment="leading" spacing={4}>
+                  <Text font={9} foregroundStyle={palette.muted}>
+                    未来 7 天 · 标价合计（分摊前）
+                  </Text>
+                  <Text
+                    font={15}
+                    fontWeight="semibold"
+                    foregroundStyle={palette.ink}
+                    lineLimit={1}
+                    minScaleFactor={0.65}
+                    monospacedDigit
+                  >
+                    {totals(upcoming(snapshot.subscriptions, date, 7)).join(
+                      ' · ',
+                    ) || '暂无'}
+                  </Text>
+                </VStack>
+                <Spacer />
+              </HStack>
+            ) : null}
             {rows.map((d) => (
               <Link
                 key={d.subscription.id}
@@ -168,116 +209,38 @@ export function WidgetView({
                 })}
                 frame={{ maxWidth: 'infinity' }}
               >
-                <SubscriptionRow s={d.subscription} date={date} dense />
+                <VStack
+                  frame={{ maxWidth: 'infinity', height: large ? 34 : 29 }}
+                >
+                  <SubscriptionRow s={d.subscription} date={date} dense />
+                </VStack>
               </Link>
             ))}
             <Spacer />
-            <Text
-              font={10}
-              foregroundStyle={palette.muted}
-              lineLimit={1}
-              minScaleFactor={0.65}
-            >
-              未来 7 天标价 ·{' '}
-              {totals(upcoming(snapshot.subscriptions, date, 7)).join(' · ') ||
-                '暂无'}{' '}
-              · 分摊前
-            </Text>
+            {large && overdue ? (
+              <Link url={home}>
+                <Text font={10} foregroundStyle={palette.red}>
+                  {overdue} 笔逾期待确认
+                </Text>
+              </Link>
+            ) : null}
           </VStack>
-        ) : (
-          <HStack
-            alignment="top"
-            spacing={18}
-            frame={{ maxHeight: 'infinity' }}
-          >
-            <Link
-              url={Script.createRunURLScheme(Script.name, {
-                subscription: next.subscription.id,
-              })}
-            >
-              <VStack
-                alignment="leading"
-                spacing={3}
-                frame={{ width: width < 330 ? 94 : 110 }}
-              >
-                <Text
-                  font={12}
-                  fontWeight="semibold"
-                  foregroundStyle={palette.ink}
-                  lineLimit={1}
-                >
-                  {next.subscription.name}
-                </Text>
-                <Countdown d={next} compact fontSize={32} />
-                <Text
-                  font={10}
-                  foregroundStyle={palette.ink}
-                  lineLimit={1}
-                  minScaleFactor={0.65}
-                >
-                  {priceLabel(next.subscription)}
-                </Text>
-              </VStack>
-            </Link>
-            <VStack
-              alignment="leading"
-              spacing={10}
-              frame={{ maxWidth: 'infinity' }}
-            >
-              {rows.slice(1).map((d) => (
-                <Link
-                  key={d.subscription.id}
-                  url={Script.createRunURLScheme(Script.name, {
-                    subscription: d.subscription.id,
-                  })}
-                >
-                  <VStack alignment="leading" spacing={3}>
-                    <Text
-                      font={12}
-                      fontWeight="medium"
-                      foregroundStyle={palette.ink}
-                      lineLimit={1}
-                    >
-                      {d.subscription.name}
-                    </Text>
-                    <Text
-                      font={10}
-                      foregroundStyle={palette.muted}
-                      lineLimit={1}
-                      minScaleFactor={0.65}
-                    >
-                      {d.date.slice(5).replace('-', '/')} ·{' '}
-                      {priceLabel(d.subscription)}
-                    </Text>
-                  </VStack>
-                </Link>
-              ))}
-              {rows.length === 1 ? (
-                <Text font={11} foregroundStyle={palette.muted}>
-                  这一笔，记得就好。
-                </Text>
-              ) : null}
-              <Spacer />
-            </VStack>
-          </HStack>
         )}
-        <HStack>
+        <HStack spacing={3}>
           <Note snapshot={snapshot} demo={config.mode === 'demo'} />
           <Spacer />
-          {!small ? (
+          {small ? (
+            <Text font={9} foregroundStyle={palette.muted}>
+              共 {all.length} 笔
+            </Text>
+          ) : (
             <Link url={home}>
-              <Text
-                font={10}
-                foregroundStyle={palette.accent}
-              >{`全部 ${snapshot.subscriptions.length} ›`}</Text>
+              <Text font={10} foregroundStyle={palette.accent}>
+                全部 {snapshot.subscriptions.length} ›
+              </Text>
             </Link>
-          ) : null}
+          )}
         </HStack>
-        {snapshot.cached && next ? (
-          <Text font={8} foregroundStyle={palette.muted} lineLimit={1}>
-            {snapshot.notice || '旧快照，请打开刷新'}
-          </Text>
-        ) : null}
       </VStack>
     </VStack>
   )

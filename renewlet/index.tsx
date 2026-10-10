@@ -11,7 +11,14 @@ import {
   Script,
   useState,
 } from 'scripting'
-import { readConfig, initial, refresh, readSort, saveSort } from './state'
+import {
+  readConfig,
+  initial,
+  refresh,
+  readSort,
+  saveSort,
+  loadLogos,
+} from './state'
 import {
   today,
   upcoming,
@@ -50,8 +57,21 @@ export function Dashboard() {
         gate.active &&
         serial === gate.serial &&
         readConfig().revision === c.revision
-      )
+      ) {
         setSnapshot(fresh)
+        // Refresh already-mounted rows too, without holding the page's refresh lock.
+        loadLogos(
+          c,
+          sorted(fresh.subscriptions, readSort(), today(c.zone)).slice(0, 40),
+        ).then(() => {
+          if (
+            gate.active &&
+            serial === gate.serial &&
+            readConfig().revision === c.revision
+          )
+            setSnapshot({ ...fresh })
+        })
+      }
     } finally {
       if (serial === gate.serial) {
         gate.busy = false
@@ -91,7 +111,7 @@ export function Dashboard() {
   )
   return (
     <List
-      navigationTitle="续订手札"
+      navigationTitle="Renewlet"
       navigationBarTitleDisplayMode="inline"
       onAppear={() => {
         gate.active = true
@@ -125,7 +145,7 @@ export function Dashboard() {
       <Section>
         <Overview snapshot={snapshot} config={config} date={date} />
       </Section>
-      <Section header={<Text>你的订阅 / COLLECTION</Text>}>
+      <Section header={<Text>全部订阅</Text>}>
         <TextField
           title="搜索订阅"
           prompt="名称、分类、币种"

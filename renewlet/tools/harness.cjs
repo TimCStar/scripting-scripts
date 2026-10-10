@@ -69,6 +69,21 @@ function harness({
       (() => {
         throw Error('Unexpected network')
       }),
+    UIImage: {
+      fromData: (data) =>
+        data?.raster
+          ? {
+              preparingThumbnail() {
+                return this
+              },
+              toPNGData() {
+                return data
+              },
+              source:
+                data.source || 'data:image/png;base64,' + data.toBase64String(),
+            }
+          : null,
+    },
   }
   for (const n of [
     'VStack',
@@ -76,6 +91,7 @@ function harness({
     'Text',
     'Spacer',
     'Image',
+    'SVG',
     'ProgressView',
     'Link',
     'Button',
@@ -105,6 +121,12 @@ function harness({
         data.set(k, v)
         return true
       },
+      getData: (k) => data.get(k) ?? null,
+      setData: (k, v) => {
+        if (!failStorage) data.set(k, v)
+      },
+      keys: () => [...data.keys()],
+      remove: (k) => data.delete(k),
     },
     Keychain: {
       get: (k) => keys.get(k) ?? null,

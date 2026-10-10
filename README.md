@@ -6,7 +6,7 @@
 
 ### [Renewlet 续订手札](renewlet/README.md)
 
-Renewlet 订阅账本：小、中、大组件展示即将续订／试用结束／权益到期的信息；打开为全部订阅，排序记忆上次选择，可查看详情、添加与编辑。原生深浅色配色，支持只读 Public API Token 与可写登录会话，包含分币种近期标价汇总、逾期待确认与演示账本。
+Renewlet 订阅账本：小、中、大组件展示订阅图标、金额、即将续订／试用结束／权益到期的信息；打开为全部订阅，排序记忆上次选择，可查看详情、添加与编辑。原生深浅色配色，支持只读 Public API Token 与可写登录会话，包含分币种近期标价汇总、逾期待确认与演示账本。
 
 - [导入安装包](renewlet/dist/Renewlet.scripting)：下载原始文件，在 iPhone「分享 → Scripting」导入。
 - [安装与连接说明](renewlet/README.md)

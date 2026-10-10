@@ -15,13 +15,17 @@ function color(c, mode) {
     return `linear-gradient(135deg,${c.gradient.map((s) => s.color).join(',')})`
   return typeof c === 'string' ? c : ''
 }
-function css(p, mode) {
+function css(p, mode, parent) {
   let s = []
   const f = p.frame || {}
   if (f.width) s.push(`width:${f.width}px`)
   if (f.height) s.push(`height:${f.height}px`)
-  if (f.maxWidth === 'infinity') s.push('flex:1;min-width:0;width:100%')
+  if (f.maxWidth === 'infinity')
+    s.push(
+      parent === 'HStack' ? 'flex:1;min-width:0' : 'min-width:0;width:100%',
+    )
   if (f.maxHeight === 'infinity') s.push('flex-grow:1;min-height:0')
+  if (f.height) s.push('justify-content:center')
   if (p.font) s.push(`font-size:${typeof p.font === 'number' ? p.font : 14}px`)
   if (p.fontWeight)
     s.push(
@@ -64,18 +68,23 @@ const symbols = {
   'arrow.up': '↑',
   'circle.fill': '●',
 }
-function render(n, mode) {
+function render(n, mode, parent) {
   if (n === null || n === undefined || n === false) return ''
   if (typeof n !== 'object') return esc(n)
   const p = n.props || {},
-    children = (n.children || []).map((c) => render(c, mode)).join(''),
-    style = css(p, mode)
+    children = (n.children || []).map((c) => render(c, mode, n.type)).join(''),
+    style = css(p, mode, parent)
   if (n.type === 'Fragment') return children
   if (n.type === 'Spacer') return '<span class="spacer"></span>'
   if (n.type === 'Text')
     return `<span class="text" style="${style}">${children}</span>`
   if (n.type === 'Image')
-    return `<span class="symbol" style="${style}">${symbols[p.systemName] || '◈'}</span>`
+    if (p.image)
+      return `<img src="${esc(p.image.source)}" style="${style};object-fit:contain"/>`
+    else
+      return `<span class="symbol" style="${style}">${symbols[p.systemName] || '◈'}</span>`
+  if (n.type === 'SVG')
+    return `<div style="${style}">${p.code.replace('<svg ', '<svg width="100%" height="100%" ')}</div>`
   if (n.type === 'ProgressView')
     return `<div class="meter"><i style="width:${Math.min(100, ((p.value || 0) / (p.total || 1)) * 100)}%;background:${color(p.tint, mode)}"></i></div>`
   if (n.type === 'Chart') {

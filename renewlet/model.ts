@@ -53,6 +53,7 @@ export interface Subscription {
   oneTimeTermUnit?: keyof typeof units
   trialEndDate?: string
   website?: string
+  logo?: string
   notes?: string
   paymentMethod?: string
   tags: string[]
@@ -178,6 +179,8 @@ export function parseSubscription(input: unknown): Subscription {
   ] as const)
     if (typeof r[k] === 'string') s[k] = r[k]
   if (validDate(r.trialEndDate)) s.trialEndDate = r.trialEndDate
+  const logo = normalizeLogo(r.logo)
+  if (logo) s.logo = logo
   if (
     Number.isInteger(r.customDays) &&
     r.customDays > 0 &&
@@ -197,6 +200,20 @@ export function parseSubscription(input: unknown): Subscription {
   if (r.costSharing && typeof r.costSharing === 'object')
     s.costSharing = r.costSharing
   return s
+}
+// Renewlet accepts external HTTP(S) URLs or owner-protected asset paths.
+export function normalizeLogo(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined
+  const value = raw.trim()
+  if (/^\/api\/app\/assets\/[A-Za-z0-9_-]+$/.test(value)) return value
+  try {
+    const u = new URL(value)
+    if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password)
+      return undefined
+    return u.toString()
+  } catch {
+    return undefined
+  }
 }
 export function dueFor(s: Subscription, date: string): Due | null {
   if (!['active', 'trial'].includes(s.status)) return null

@@ -1,4 +1,6 @@
-import { VStack, HStack, Text, Image, Spacer, ProgressView } from 'scripting'
+import { VStack, HStack, Text, Image, SVG, Spacer, useState } from 'scripting'
+import { readLogo } from './icons'
+import { readConfig, loadLogos } from './state'
 import {
   dueFor,
   dueLabel,
@@ -19,21 +21,21 @@ export const palette = {
   green: { light: '#237764', dark: '#84D7B9' },
   amber: { light: '#A76219', dark: '#F1BC78' },
   red: { light: '#BE465F', dark: '#FF9BAF' },
-  wash: { light: '#EDF0FE', dark: '#242D49' },
+  wash: { light: '#EEF1F8', dark: '#293147' },
   card: { light: '#FFFFFF', dark: '#1A2035' },
   gradient: {
     light: {
       gradient: [
-        { color: '#F7F8FF', location: 0 },
-        { color: '#E8EEFC', location: 1 },
+        { color: '#FFFFFF', location: 0 },
+        { color: '#EEF1F9', location: 1 },
       ],
       startPoint: { x: 0, y: 0 },
       endPoint: { x: 1, y: 1 },
     },
     dark: {
       gradient: [
-        { color: '#252F50', location: 0 },
-        { color: '#141A2D', location: 1 },
+        { color: '#222A3E', location: 0 },
+        { color: '#171D2E', location: 1 },
       ],
       startPoint: { x: 0, y: 0 },
       endPoint: { x: 1, y: 1 },
@@ -47,9 +49,51 @@ export function tone(d: Due | null) {
       ? palette.amber
       : palette.accent
 }
-export function Monogram({ s, size = 36 }: { s: Subscription; size?: number }) {
+export function SubscriptionIcon({
+  s,
+  size = 36,
+}: {
+  s: Subscription
+  size?: number
+}) {
+  const [, setVersion] = useState(0)
+  const config = readConfig(),
+    logo = readLogo(config, s)
+  async function appear() {
+    if (!s.logo || config.mode === 'demo') return
+    await loadLogos(config, [s])
+    if (readConfig().revision === config.revision) setVersion((v) => v + 1)
+  }
+  if (logo)
+    return (
+      <VStack
+        onAppear={appear}
+        frame={{ width: size, height: size }}
+        background="#FFFFFF"
+        clipShape={{ type: 'rect', cornerRadius: size * 0.25 }}
+      >
+        {'svg' in logo ? (
+          <SVG
+            code={logo.svg}
+            resizable
+            renderingMode="original"
+            scaleToFit
+            frame={{ width: size - 6, height: size - 6 }}
+          />
+        ) : (
+          <Image
+            image={logo.image}
+            resizable
+            renderingMode="original"
+            scaleToFit
+            frame={{ width: size - 6, height: size - 6 }}
+          />
+        )}
+      </VStack>
+    )
   return (
     <Text
+      onAppear={appear}
       font={size * 0.44}
       fontWeight="semibold"
       foregroundStyle={palette.accent}
@@ -99,10 +143,10 @@ export function SubscriptionRow({
   return (
     <HStack
       spacing={dense ? 9 : 12}
-      padding={{ vertical: dense ? 2 : 8 }}
+      padding={{ vertical: dense ? 0 : 8 }}
       frame={{ maxWidth: 'infinity' }}
     >
-      <Monogram s={s} size={dense ? 28 : 42} />
+      <SubscriptionIcon s={s} size={dense ? 28 : 42} />
       <VStack
         alignment="leading"
         spacing={dense ? 3 : 5}
@@ -124,7 +168,9 @@ export function SubscriptionRow({
           lineLimit={1}
         >
           {dense
-            ? `${d?.date.slice(5).replace('-', '/')} · ${d ? dueTypes[d.type] : ''}`
+            ? d
+              ? `${d.date.slice(5).replace('-', '/')} · ${dueTypes[d.type]}`
+              : cycleLabel(s)
             : `${s.category} · ${cycleLabel(s)}${s.autoRenew ? ' · 自动续订' : ''}`}
         </Text>
       </VStack>
@@ -178,20 +224,17 @@ export function Overview({
     ),
     sums = totals(next)
   return (
-    <VStack alignment="leading" spacing={18} padding={{ vertical: 12 }}>
+    <VStack alignment="leading" spacing={16} padding={{ vertical: 6 }}>
       <HStack>
         <Image
           systemName="calendar.badge.clock"
           foregroundStyle={palette.accent}
         />
         <Text font={11} fontWeight="semibold" foregroundStyle={palette.accent}>
-          RENEWLET / 续订手札
+          订阅概览
         </Text>
         <Spacer />
       </HStack>
-      <Text font={28} fontWeight="semibold" foregroundStyle={palette.ink}>
-        {overdue.length ? '有几笔账单，等你照看。' : '把下次，安排得从容。'}
-      </Text>
       <HStack spacing={20}>
         <Metric
           title="全部订阅"
@@ -209,13 +252,13 @@ export function Overview({
         clipShape={{ type: 'rect', cornerRadius: 14 }}
       >
         <Text font={10} fontWeight="medium" foregroundStyle={palette.muted}>
-          未来 7 天 · 每笔下一次标价 / 试用与权益期参考
+          未来 7 天 · 标价合计
         </Text>
         <Text font={16} fontWeight="semibold" foregroundStyle={palette.accent}>
           {sums.length ? sums.join('  ·  ') : '暂无即将到期的账单'}
         </Text>
         <Text font={10} foregroundStyle={palette.muted}>
-          按币种分别汇总 · 非支付确认 · 家庭分摊前
+          分币种 · 分摊前 · 含试用与权益期参考价
         </Text>
       </VStack>
       <Note snapshot={snapshot} demo={config.mode === 'demo'} />
@@ -224,42 +267,6 @@ export function Overview({
           {snapshot.notice}
         </Text>
       ) : null}
-    </VStack>
-  )
-}
-export function Countdown({
-  d,
-  compact = false,
-  fontSize,
-}: {
-  d: Due
-  compact?: boolean
-  fontSize?: number
-}) {
-  return (
-    <VStack alignment="leading" spacing={compact ? 1 : 4}>
-      <HStack alignment="firstTextBaseline" spacing={4}>
-        <Text
-          font={fontSize || (compact ? 38 : 46)}
-          fontWeight="semibold"
-          foregroundStyle={tone(d)}
-          monospacedDigit
-        >
-          {d.days}
-        </Text>
-        <Text font={11} foregroundStyle={palette.muted}>
-          天{d.days === 0 ? ' · 今天' : ''}
-        </Text>
-      </HStack>
-      <Text font={10} foregroundStyle={palette.muted}>
-        {d.date.slice(5).replace('-', '/')} · {dueTypes[d.type]}
-      </Text>
-      <ProgressView
-        value={Math.max(0, Math.min(1, 1 - d.days / 30))}
-        total={1}
-        progressViewStyle="linear"
-        tint={tone(d)}
-      />
     </VStack>
   )
 }

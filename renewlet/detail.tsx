@@ -12,7 +12,7 @@ import {
   Link,
   useState,
 } from 'scripting'
-import { detail, initial, readConfig } from './state'
+import { detail, initial, readConfig, loadLogos } from './state'
 import {
   today,
   dueFor,
@@ -23,7 +23,7 @@ import {
   statuses,
   type Subscription,
 } from './model'
-import { palette, Monogram } from './ui'
+import { palette, SubscriptionIcon } from './ui'
 import { errorMessage } from './client'
 import { Editor } from './editor'
 function Field({ title, value }: { title: string; value: string }) {
@@ -56,6 +56,8 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
         setS(fresh)
         setReady(true)
         setMessage('')
+        await loadLogos(config, [fresh])
+        if (gate.active && serial === gate.serial) setS({ ...fresh })
       }
     } catch (e) {
       if (gate.active && serial === gate.serial) setMessage(errorMessage(e))
@@ -127,33 +129,44 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
         <>
           <Section>
             <VStack alignment="leading" spacing={16} padding={{ vertical: 12 }}>
-              <Monogram s={s} size={54} />
-              <Text
-                font={30}
-                fontWeight="semibold"
-                foregroundStyle={palette.ink}
-              >
-                {s.name}
-              </Text>
-              <Text
-                font={23}
-                fontWeight="medium"
-                foregroundStyle={palette.accent}
-                monospacedDigit
-              >
-                {priceLabel(s)}
-              </Text>
-              <Text foregroundStyle={palette.muted}>
-                {cycleLabel(s)} · {statuses[s.status]}
-              </Text>
-              <Text
-                font={18}
-                fontWeight="semibold"
-                foregroundStyle={palette.ink}
-              >
-                {dueLabel(d)}
-                {d ? ` · ${dueTypes[d.type]}` : ''}
-              </Text>
+              <HStack spacing={12}>
+                <SubscriptionIcon s={s} size={54} />
+                <VStack
+                  alignment="leading"
+                  spacing={6}
+                  frame={{ maxWidth: 'infinity' }}
+                >
+                  <Text
+                    font={23}
+                    fontWeight="semibold"
+                    foregroundStyle={palette.ink}
+                  >
+                    {s.name}
+                  </Text>
+                  <Text foregroundStyle={palette.muted}>
+                    {cycleLabel(s)} · {statuses[s.status]}
+                  </Text>
+                </VStack>
+              </HStack>
+              <HStack alignment="firstTextBaseline">
+                <Text
+                  font={23}
+                  fontWeight="medium"
+                  foregroundStyle={palette.accent}
+                  monospacedDigit
+                >
+                  {priceLabel(s)}
+                </Text>
+                <Spacer />
+                <Text
+                  font={13}
+                  fontWeight="semibold"
+                  foregroundStyle={palette.ink}
+                >
+                  {dueLabel(d)}
+                  {d ? ` · ${dueTypes[d.type]}` : ''}
+                </Text>
+              </HStack>
               {!ready ? (
                 <Text font={11} foregroundStyle={palette.muted}>
                   列表快照 · 正在读取完整详情
@@ -199,9 +212,7 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
             <Field title="置顶" value={s.pinned ? '是' : '否'} />
           </Section>
           <Section header={<Text>备忘</Text>}>
-            <Text foregroundStyle={palette.ink}>
-              {s.notes || '给未来的自己留一句话。'}
-            </Text>
+            <Text foregroundStyle={palette.ink}>{s.notes || '暂无备注'}</Text>
             <Text font={12} foregroundStyle={palette.muted}>
               {s.tags.length ? s.tags.join(' · ') : '暂无标签'}
             </Text>
