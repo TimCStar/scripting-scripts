@@ -19,15 +19,16 @@ function snapshotNote(w:Window,c:Config):string {
   if(w.resetsAt&&Date.parse(w.resetsAt)<=now)return '待更新'
   return isStale(w.updatedAt,c.staleMinutes,now)?'旧快照':''
 }
-type MeterType = {label:number;value:number;detail:number;clock:number;gap:number}
+type MeterType = {label:number;value:number;detail:number;clock:number;gap:number;note:number}
 // Two compositions, not a hidden row in the same two-window card. The single
-// window gets the entire available width and a substantially larger type scale.
+// window gets the available width; the label leads and the percentage is a peer.
+// Extra space goes to readable details instead of an oversized percentage.
 function WindowReading({window:w,config:c,type:t}:{window:Window;config:Config;type:MeterType}) {
   const note=snapshotNote(w,c)
   return <VStack alignment="leading" spacing={t.gap} frame={{maxWidth:'infinity'}}>
     <HStack alignment="firstTextBaseline" spacing={3}>
       <Text font={t.label} fontWeight="bold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.8}>{w.label}</Text>
-      {note?<Text font={8} foregroundStyle={muted} lineLimit={1} minScaleFactor={0.75}>{note}</Text>:null}
+      {note?<Text font={t.note} foregroundStyle={muted} lineLimit={1} minScaleFactor={0.75}>{note}</Text>:null}
       <Spacer/>
       <Text font={t.value} fontWeight="semibold" monospacedDigit foregroundStyle={w.percent===null?muted:foreground} lineLimit={1} minScaleFactor={0.8}>{w.percent===null?'未知':`${Math.round(w.percent)}%`}</Text>
     </HStack>
@@ -40,24 +41,25 @@ function WindowReading({window:w,config:c,type:t}:{window:Window;config:Config;t
   </VStack>
 }
 function SingleWindow({window,config,mode}:{window:Window;config:Config;mode:Layout}) {
-  const type:MeterType=mode==='largeOne'?{label:32,value:64,detail:18,clock:16,gap:10}
-    :mode==='largeRows'?{label:17,value:20,detail:9,clock:9,gap:0}
-    :mode==='small'||mode==='mediumTwo'?{label:22,value:32,detail:10,clock:9,gap:3}
-    :mode==='mediumOne'?{label:24,value:36,detail:12,clock:11,gap:3}
-    :{label:26,value:40,detail:12,clock:11,gap:5}
+  const type:MeterType=mode==='largeOne'?{label:32,value:30,detail:22,clock:20,gap:10,note:13}
+    :mode==='largeRows'?{label:17,value:16,detail:10,clock:9,gap:0,note:9}
+    :mode==='small'?{label:22,value:21,detail:11,clock:10,gap:2,note:10}
+    :mode==='mediumTwo'?{label:22,value:21,detail:12,clock:11,gap:2,note:10}
+    :mode==='mediumOne'?{label:24,value:23,detail:15,clock:14,gap:3,note:11}
+    :{label:26,value:25,detail:15,clock:14,gap:5,note:11}
   return <VStack alignment="leading" spacing={0} frame={{maxWidth:'infinity'}}><WindowReading window={window} config={config} type={type}/></VStack>
 }
 function DualWindows({windows,config,mode}:{windows:Window[];config:Config;mode:Layout}) {
   const compact=mode==='small'||mode==='mediumTwo'
   const dense=mode==='largeRows'
-  const type:MeterType=mode==='largeOne'?{label:23,value:32,detail:14,clock:12,gap:5}
-    :compact?{label:13,value:13,detail:7,clock:7,gap:1}
-    :dense?{label:14,value:17,detail:8,clock:8,gap:1}
-    :{label:18,value:24,detail:10,clock:9,gap:3}
+  const type:MeterType=mode==='largeOne'?{label:25,value:24,detail:18,clock:16,gap:5,note:12}
+    :compact?{label:13,value:13,detail:9,clock:8,gap:0,note:9}
+    :dense?{label:15,value:14,detail:10,clock:9,gap:0,note:9}
+    :{label:20,value:19,detail:12,clock:11,gap:mode==='mediumOne'?1:3,note:10}
   const readings=windows.map((w,i)=><WindowReading key={String(i)} window={w} config={config} type={type}/>)
   // Narrow cards stack windows; wide cards pair them. Neither branch leaves an
   // empty second column or a 5h-sized placeholder after 5h is hidden.
-  return compact||mode==='largeOne'?<VStack spacing={compact?3:18} frame={{maxWidth:'infinity'}}>{readings}</VStack>
+  return compact||mode==='largeOne'?<VStack spacing={compact?0:18} frame={{maxWidth:'infinity'}}>{readings}</VStack>
     :<HStack alignment="top" spacing={14} frame={{maxWidth:'infinity'}}>{readings}</HStack>
 }
 function AccountCard({account:a,config:c,mode,images}:{account:AccountView;config:Config;mode:Layout;images:ProviderImages}) {
@@ -67,17 +69,17 @@ function AccountCard({account:a,config:c,mode,images}:{account:AccountView;confi
   const status=a.error?'连接异常':a.status!=='active'&&a.status!=='未知'?'账号异常':''
   const header=<HStack spacing={dense?5:7} padding={{trailing:24}}>
     <ProviderIcon images={images} provider={a.provider} size={big?40:dense?20:compact?24:28}/>
-    <Text font={big?21:dense?12:compact?13:14} fontWeight="semibold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.75}>{displayName(a,c.displayNames)}</Text>
-    {status?<Text font={8} foregroundStyle={warning} lineLimit={1}>{compact||dense?'异常':status}</Text>:null}<Spacer/>
-    {roomy&&a.provider==='openai'&&a.resetCredits?<Link url={Script.createRunSingleURLScheme(Script.name,{action:'reset',accountID:String(a.id)})}><Text font={10} foregroundStyle={foreground}>重置…</Text></Link>:null}
+    <Text font={big?23:dense?14:compact?15:17} fontWeight="semibold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.75}>{displayName(a,c.displayNames)}</Text>
+    {status?<Text font={dense||compact?9:11} foregroundStyle={warning} lineLimit={1}>{compact||dense?'异常':status}</Text>:null}<Spacer/>
+    {roomy&&a.provider==='openai'&&a.resetCredits?<Link url={Script.createRunSingleURLScheme(Script.name,{action:'reset',accountID:String(a.id)})}><Text font={big?14:12} foregroundStyle={foreground}>重置…</Text></Link>:null}
   </HStack>
-  const meters=solo?<SingleWindow window={windows[0]} config={c} mode={mode}/>:windows.length?<DualWindows windows={windows} config={c} mode={mode}/>:<Text font={big?13:10} foregroundStyle={muted} lineLimit={2}>{a.error?'暂时无法读取额度':'暂无额度快照'}</Text>
+  const meters=solo?<SingleWindow window={windows[0]} config={c} mode={mode}/>:windows.length?<DualWindows windows={windows} config={c} mode={mode}/>:<Text font={big?16:12} foregroundStyle={muted} lineLimit={2}>{a.error?'暂时无法读取额度':'暂无额度快照'}</Text>
   const credits=a.resetCredits
-  const creditLine=roomy&&!(mode==='mediumOne'&&solo)&&credits&&credits.available!==null?<Text font={big?11:9} foregroundStyle={muted} lineLimit={1}>重置券 {credits.available} 次 · 缓存</Text>:null
-  const data=<VStack alignment="leading" spacing={big?12:3} frame={{maxWidth:'infinity'}}>{meters}{creditLine}</VStack>
+  const creditLine=roomy&&!(mode==='mediumOne'&&solo)&&credits&&credits.available!==null?<Text font={big?14:11} foregroundStyle={muted} lineLimit={1}>重置券 {credits.available} 次 · 缓存</Text>:null
+  const data=<VStack alignment="leading" spacing={big?12:mode==='mediumOne'?2:3} frame={{maxWidth:'infinity'}}>{meters}{creditLine}</VStack>
   // Only this region expands. Its intrinsic DATA remains vertically centered;
   // the identity row and the daily/update footer cannot drift to the edges.
-  return <VStack alignment="leading" spacing={big?10:2} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
+  return <VStack alignment="leading" spacing={big?10:compact?0:dense||mode==='mediumOne'?1:2} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
     {header}
     <VStack frame={{maxWidth:'infinity',maxHeight:'infinity',alignment:'center'}}>{data}</VStack>
   </VStack>
@@ -102,20 +104,25 @@ async function run(){
   }
   now=Date.now()
   const layout=widgetLayout(Widget.family,accounts.length)
+  // The only tight case is two stacked windows in a 155pt small/medium host.
+  // Solo cards spend their freed hero-height budget on larger body/footer text.
+  const compactDual=(small||layout==='mediumTwo')&&accounts.some(a=>visibleWindows(a,config).length>1)
+  const footerFont=layout==='largeOne'?14:layout==='largeTwo'?12:layout==='mediumOne'?(accounts.some(a=>visibleWindows(a,config).length>1)?11:12):layout==='largeRows'?10:compactDual?9:11
+  const noticeFont=compactDual?9:layout==='largeOne'?12:10
   // Official widget samples use the actual host dimensions for full-surface backgrounds.
   // The background has no inset; content has a modest, consistent safe inset.
   const view=<VStack spacing={0} frame={Widget.displaySize} widgetBackground={bg}>
     <VStack padding={{horizontal:small?14:12,vertical:large?12:10}} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
-    <VStack overlay={accounts.length?{alignment:'topTrailing',content:<Button buttonStyle="plain" intent={RefreshMonitorIntent({accountIDs:config.accountIDs,identity:identity(rootConfig)})}><Image systemName="arrow.clockwise" font={14} foregroundStyle={foreground} frame={{width:24,height:24}}/></Button>}:undefined} alignment="leading" spacing={2} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
-    {accounts.length===0?<VStack alignment="leading" spacing={8}><Text font={15} fontWeight="semibold" foregroundStyle={foreground}>连接你的用量</Text><Text font={11} foregroundStyle={muted}>{notice||'打开脚本，配置服务器与账号。'}</Text></VStack>:
+    <VStack overlay={accounts.length?{alignment:'topTrailing',content:<Button buttonStyle="plain" intent={RefreshMonitorIntent({accountIDs:config.accountIDs,identity:identity(rootConfig)})}><Image systemName="arrow.clockwise" font={14} foregroundStyle={foreground} frame={{width:24,height:24}}/></Button>}:undefined} alignment="leading" spacing={1} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
+    {accounts.length===0?<VStack alignment="leading" spacing={8}><Text font={17} fontWeight="semibold" foregroundStyle={foreground}>连接你的用量</Text><Text font={13} foregroundStyle={muted}>{notice||'打开脚本，配置服务器与账号。'}</Text></VStack>:
       layout==='mediumOne'?<AccountCard images={artwork.images} account={accounts[0]} config={config} mode="mediumOne"/>:
-      large?<VStack spacing={layout==='largeRows'?2:8} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode={layout}/>)}</VStack>:
+      large?<VStack spacing={layout==='largeRows'?1:8} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode={layout}/>)}</VStack>:
       small?<AccountCard images={artwork.images} account={accounts[0]} config={config} mode="small"/>:
       <HStack alignment="top" spacing={10} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode="mediumTwo"/>)}</HStack>}
     {accounts.length===0?<Spacer/>:null}
-    {notice&&accounts.length?<Text font={8} foregroundStyle={muted} lineLimit={1} frame={{maxWidth:'infinity',alignment:'center'}} multilineTextAlignment="center">{notice}</Text>:null}
-    {accounts.length?<VStack spacing={1} frame={{maxWidth:'infinity'}}>{accounts.map(a=><Text key={String(a.id)} font={8} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.65} frame={{maxWidth:'infinity',alignment:'center'}} multilineTextAlignment="center">{accounts.length>1?`${displayName(a,config.displayNames)} · ${todayUsage(a,config,now)}`:todayUsage(a,config,now)}</Text>)}</VStack>:null}
-    {accounts.length?<Text font={8} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75} frame={{maxWidth:'infinity',alignment:'center'}} multilineTextAlignment="center">{updateFooter(accounts)}</Text>:null}
+    {notice&&accounts.length?<Text font={noticeFont} foregroundStyle={muted} lineLimit={1} frame={{maxWidth:'infinity',alignment:'center'}} multilineTextAlignment="center">{notice}</Text>:null}
+    {accounts.length?<VStack spacing={compactDual?0:1} frame={{maxWidth:'infinity'}}>{accounts.map(a=><Text key={String(a.id)} font={footerFont} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.65} frame={{maxWidth:'infinity',alignment:'center'}} multilineTextAlignment="center">{accounts.length>1?`${displayName(a,config.displayNames)} · ${todayUsage(a,config,now)}`:todayUsage(a,config,now)}</Text>)}</VStack>:null}
+    {accounts.length?<Text font={footerFont} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75} frame={{maxWidth:'infinity',alignment:'center'}} multilineTextAlignment="center">{updateFooter(accounts)}</Text>:null}
     </VStack>
     </VStack>
   </VStack>

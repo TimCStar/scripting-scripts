@@ -1,6 +1,6 @@
 {
   "name": "sub2api-scripting-monitor",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "Sub2API iOS Scripting 被动监控与手动确认重置",
   "scripts": {
