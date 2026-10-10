@@ -113,6 +113,7 @@ function harness({
     Date,
     JSON,
     URL,
+    AbortController,
     console,
     setTimeout,
     clearTimeout,

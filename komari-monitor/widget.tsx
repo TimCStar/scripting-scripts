@@ -32,6 +32,18 @@ import {
 } from './ui'
 import { RefreshKomariIntent } from './app_intents'
 
+function widgetScale(family: Family) {
+  const width = family === 'systemSmall' ? 155 : 329,
+    height = family === 'systemLarge' ? 345 : 155
+  return Math.max(
+    1,
+    Math.min(
+      1.2,
+      Widget.displaySize.width / width,
+      Widget.displaySize.height / height,
+    ),
+  )
+}
 function WidgetResources({
   node,
   size,
@@ -51,9 +63,12 @@ function WidgetResources({
       {readings.map(([label, value], i) => (
         <VStack
           key={String(label)}
-          alignment="leading"
+          alignment={i === 0 ? 'leading' : i === 1 ? 'center' : 'trailing'}
           spacing={1}
-          frame={{ maxWidth: 'infinity', alignment: 'leading' }}
+          frame={{
+            maxWidth: 'infinity',
+            alignment: i === 0 ? 'leading' : i === 1 ? 'center' : 'trailing',
+          }}
         >
           <Text font={labelSize} foregroundStyle={palette.muted}>
             {label}
@@ -123,21 +138,29 @@ function WidgetNode({
   family,
   wide = false,
   solo = false,
+  availableHeight,
 }: {
   node: Node
   cached?: boolean
   family: Family
   wide?: boolean
   solo?: boolean
+  availableHeight?: number
 }) {
   const large = family === 'systemLarge',
     small = family === 'systemSmall',
-    size = solo ? 28 : large ? (wide ? 20 : 17) : 15,
-    flow = solo ? 13 : large ? (wide ? 11 : 10) : 9.5
+    scale = widgetScale(family),
+    typeScale =
+      scale *
+      (!large && availableHeight !== undefined && availableHeight < 100 * scale
+        ? 0.88
+        : 1),
+    size = (solo ? 28 : large ? (wide ? 20 : 17) : 15) * typeScale,
+    flow = (solo ? 13 : large ? (wide ? 11 : 10) : 9) * typeScale
   return (
     <VStack
       alignment="leading"
-      spacing={solo ? 7 : 2}
+      spacing={solo ? 7 : large ? 2 : 1.5}
       frame={{
         maxWidth: 'infinity',
         maxHeight: 'infinity',
@@ -146,7 +169,7 @@ function WidgetNode({
     >
       <HStack spacing={4}>
         <Text
-          font={solo ? 20 : wide ? 16 : 14}
+          font={(solo ? 22 : wide ? 18 : 16) * typeScale}
           fontWeight="semibold"
           foregroundStyle={palette.ink}
           lineLimit={1}
@@ -165,14 +188,14 @@ function WidgetNode({
       <WidgetResources
         node={node}
         size={size}
-        labelSize={small || !large ? 8.5 : 9}
+        labelSize={(small || !large ? 8.5 : 9) * typeScale}
       />
       {large ? <Spacer /> : null}
       <TrafficMeter node={node} compact fontSize={flow} />
       <ProbeReading
         node={node}
         compact
-        fontSize={solo ? 13 : wide ? 11 : 9.5}
+        fontSize={(solo ? 13 : wide ? 11 : 9) * typeScale}
       />
       {large ? (
         <Trend
@@ -182,7 +205,10 @@ function WidgetNode({
         />
       ) : null}
       {small || !large ? <Spacer /> : null}
-      <WidgetSpeeds node={node} size={solo ? 13 : large ? 11 : 9.5} />
+      <WidgetSpeeds
+        node={node}
+        size={(solo ? 13 : large ? 11 : 9) * typeScale}
+      />
       {solo ? (
         <Text font={11} foregroundStyle={palette.muted}>
           已运行 {uptime(node.status?.uptime ?? null)} · {probe(node).name}
@@ -191,7 +217,16 @@ function WidgetNode({
     </VStack>
   )
 }
-function MediumSolo({ node, cached }: { node: Node; cached?: boolean }) {
+function MediumSolo({
+  node,
+  cached,
+  availableHeight,
+}: {
+  node: Node
+  cached?: boolean
+  availableHeight: number
+}) {
+  const scale = widgetScale('systemMedium') * (availableHeight < 100 ? 0.88 : 1)
   return (
     <HStack
       spacing={14}
@@ -211,19 +246,22 @@ function MediumSolo({ node, cached }: { node: Node; cached?: boolean }) {
           alignment: 'topLeading',
         }}
       >
-        <Text
-          font={17}
-          fontWeight="semibold"
-          foregroundStyle={palette.ink}
-          lineLimit={1}
-          minScaleFactor={0.7}
-        >
-          {node.name}
-        </Text>
-        <StatusBadge node={node} cached={cached} compact />
+        <HStack spacing={4}>
+          <Text
+            font={19 * scale}
+            fontWeight="semibold"
+            foregroundStyle={palette.ink}
+            lineLimit={1}
+            minScaleFactor={0.7}
+          >
+            {node.name}
+          </Text>
+          <Spacer />
+          <StatusBadge node={node} cached={cached} compact />
+        </HStack>
         <HStack alignment="firstTextBaseline" spacing={4}>
           <Text
-            font={30}
+            font={32 * scale}
             fontWeight="semibold"
             monospacedDigit
             foregroundStyle={palette.ink}
@@ -245,20 +283,20 @@ function MediumSolo({ node, cached }: { node: Node; cached?: boolean }) {
       </VStack>
       <VStack
         alignment="leading"
-        spacing={4}
+        spacing={availableHeight < 100 ? 3 : 4}
         frame={{
           maxWidth: 'infinity',
           maxHeight: 'infinity',
           alignment: 'topLeading',
         }}
       >
-        <TrafficMeter node={node} compact fontSize={11} />
-        <ProbeReading node={node} compact fontSize={10} />
-        <Text font={9} foregroundStyle={palette.muted} lineLimit={1}>
+        <TrafficMeter node={node} compact fontSize={11 * scale} />
+        <ProbeReading node={node} compact fontSize={10 * scale} />
+        <Text font={9 * scale} foregroundStyle={palette.muted} lineLimit={1}>
           {probe(node).name}
         </Text>
         <Spacer />
-        <WidgetSpeeds node={node} size={11} vertical />
+        <WidgetSpeeds node={node} size={11 * scale} vertical />
       </VStack>
     </HStack>
   )
@@ -320,6 +358,7 @@ export function WidgetView({
           family={family}
           wide={wide}
           solo={solo}
+          availableHeight={bodyHeight}
         />
       </Link>
     )
@@ -396,6 +435,7 @@ export function WidgetView({
               node={nodes[0]}
               cached={snapshot.cached}
               family={family}
+              availableHeight={bodyHeight}
             />
           ) : !large ? (
             nodes.length === 1 ? (
@@ -407,7 +447,11 @@ export function WidgetView({
                   alignment: 'topLeading',
                 }}
               >
-                <MediumSolo node={nodes[0]} cached={snapshot.cached} />
+                <MediumSolo
+                  node={nodes[0]}
+                  cached={snapshot.cached}
+                  availableHeight={bodyHeight}
+                />
               </Link>
             ) : (
               <HStack

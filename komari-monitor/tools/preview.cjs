@@ -132,8 +132,22 @@ async function main() {
         ]) {
       const h = harness({
         family,
-        width: family === 'systemSmall' ? 155 : 329,
-        height: family === 'systemLarge' ? 345 : 155,
+        width:
+          process.env.KOMARI_PREVIEW_LARGE_DEVICE === '1'
+            ? family === 'systemSmall'
+              ? 170
+              : 364
+            : family === 'systemSmall'
+              ? 155
+              : 329,
+        height:
+          process.env.KOMARI_PREVIEW_LARGE_DEVICE === '1'
+            ? family === 'systemLarge'
+              ? 382
+              : 170
+            : family === 'systemLarge'
+              ? 345
+              : 155,
       })
       h.load('widget.tsx')
       await h.globals.completion
@@ -141,13 +155,18 @@ async function main() {
         snapshot = m.demoSnapshot()
       // Exercise a limited and unlimited pair without changing runtime demo data.
       snapshot.nodes[1].trafficLimit = null
+      if (process.env.KOMARI_PREVIEW_WARNING === '1') {
+        snapshot.transport = 'rpc'
+        snapshot.cached = true
+        snapshot.notice = '连接失败或响应无效 · 保留旧快照'
+      }
       const view = h.load('widget.tsx').WidgetView({
         snapshot,
         family,
         ids: snapshot.nodes.slice(0, count).map((n) => n.id),
       })
       cards.push(
-        `<article><div class="caption">${family === 'systemSmall' ? '01 / SMALL' : family === 'systemMedium' ? '02 / MEDIUM' : '03 / LARGE'}<span>${count} 台 VPS</span></div><div class="widget ${family}" data-theme="${mode}">${render(view, mode)}</div></article>`,
+        `<article><div class="caption">${family === 'systemSmall' ? '01 / SMALL' : family === 'systemMedium' ? '02 / MEDIUM' : '03 / LARGE'}<span>${count} 台 VPS</span></div><div class="widget ${family}" style="width:${h.bridge.Widget.displaySize.width}px;height:${h.bridge.Widget.displaySize.height}px" data-theme="${mode}">${render(view, mode)}</div></article>`,
       )
     }
     widgetSections.push(
@@ -155,6 +174,18 @@ async function main() {
     )
   }
   const h = harness()
+  if (process.env.KOMARI_PREVIEW_ERROR === '1') {
+    const original = h.load('monitor.tsx').useMonitor
+    h.load('monitor.tsx').useMonitor = () => {
+      const m = original()
+      return {
+        ...m,
+        snapshot: { ...m.snapshot, cached: true },
+        error: '请求超时（8 秒），请检查网络或服务器',
+        liveNote: '连接失败 · 自动重试',
+      }
+    }
+  }
   h.load('index.tsx')
   await h.globals.completion
   const dashboard = h.load('index.tsx').Dashboard(),

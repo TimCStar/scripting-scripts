@@ -7,10 +7,10 @@ import {
   ProgressView,
   Chart,
   LineChart,
+  Button,
 } from 'scripting'
 import {
   state,
-  stateLabel,
   percent,
   speed,
   timeLabel,
@@ -90,6 +90,28 @@ export function SiteBrand({
         {snapshot.site?.title || 'Komari 夜航'}
       </Text>
     </HStack>
+  )
+}
+export function ConnectionIssue({
+  message,
+  busy,
+  retry,
+}: {
+  message: string
+  busy: boolean
+  retry: () => Promise<void>
+}) {
+  return (
+    <VStack
+      alignment="leading"
+      spacing={7}
+      frame={{ maxWidth: 'infinity', alignment: 'leading' }}
+    >
+      <Text font={13} foregroundStyle={palette.red}>
+        {message}
+      </Text>
+      <Button title={busy ? '重试中…' : '立即重试'} action={retry} />
+    </VStack>
   )
 }
 export function TrafficMeter({
@@ -213,17 +235,20 @@ export function StatusBadge({
 }) {
   const s = state(node, cached),
     color =
-      s === 'online' || s === 'recent'
+      s === 'online'
         ? palette.teal
         : s === 'offline'
           ? palette.red
-          : palette.muted
+          : s === 'stale' || s === 'recent'
+            ? palette.amber
+            : palette.muted
   return (
-    <HStack spacing={4} frame={{ width: compact ? 36 : 54 }}>
-      <Image systemName="circle.fill" font={6} foregroundStyle={color} />
-      <Text font={compact ? 9 : 11} foregroundStyle={color} lineLimit={1}>
-        {cached ? '旧快照' : stateLabel[s]}
-      </Text>
+    <HStack spacing={0} frame={{ width: compact ? 8 : 10 }}>
+      <Image
+        systemName="circle.fill"
+        font={compact ? 6 : 8}
+        foregroundStyle={color}
+      />
     </HStack>
   )
 }

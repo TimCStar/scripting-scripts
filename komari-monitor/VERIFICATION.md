@@ -1,15 +1,17 @@
 # 验证记录
 
-版本 **1.1.1**；日期 **2026-10-10**。自动网络测试使用虚构数据与模拟响应；另外只读核对了用户提供的公开部署首页、公开元信息与 favicon，没有读取或提交真实 VPS 数据。
+版本 **1.1.2**；日期 **2026-10-10**。自动网络测试使用虚构数据与模拟响应；另外只读核对了用户提供的公开部署首页、公开元信息与 favicon，没有读取或提交真实 VPS 数据。
 
 ## 已执行
 
-- Node **24.14.0**，`npm test`：44 项测试通过，包含数据与接口测试、独立 Widget／App Intent 桥接执行、七种尺寸／节点数的视图树检查、总览／详情入口检查和离开页面停止轮询。新增旧图标失败缓存迁移、218 KB 图标读取与缓存、失败重试／已有图标保留，以及中号有限／无限额度的流量轨道结构回归检查。
+- Node **24.14.0**，`npm test`：54 项测试通过，包含数据与接口测试、独立 Widget／App Intent 桥接执行、七种尺寸／节点数的视图树检查、总览／详情入口检查和离开页面停止轮询。包括旧图标失败缓存迁移、218 KB 图标读取与缓存、失败重试／已有图标保留，中号有限／无限额度的流量轨道结构，以及鉴权／HTTP／JSON 错误可见、原生请求与正文挂起超时、迟到结果隔离、图标挂起不阻塞监控、监听缺失、意外异常、总览／详情错误入口、原生出现回调缺失后的手动恢复。
 - TypeScript **5.9.3**，`npm run typecheck:core`：`model.ts`、`client.ts` 严格类型检查通过。
 - `npm run check`：10 个运行时 `.ts` / `.tsx` 文件的语法诊断通过，`script.json` 必需字段通过。
 - `.scripting` 与源码 ZIP 打包后重新解压，所有文件逐字节对照源码一致；SHA-256、文件数和大小保存在 `dist/checksums.json`。安装包文件直接位于 ZIP 根目录。
 - Playwright／Edge 对实际 TSX 生成的 **HTML 布局近似**截图检查：全部七种尺寸／节点数组合的浅深色预览；155×155、329×155、329×345 点模拟尺寸。重构字号、顶部靠左与可用高度分配后，指标没有与页脚重叠；长节点名单行省略，小号及中号指标没有截断。中号有限额度与无限额度两列的流量轨道纵坐标相同，大号三台的最后一台占整行。总览、详情及组件流量区域没有独立绿色底板。此结果不代表 SwiftUI 原生布局结果。
 - 公开站点标题来自首页及 `/api/public`；`/favicon.ico` 返回 222845 字节、1024×1024 PNG，虽 MIME 为 `image/vnd.microsoft.icon`，文件本身是 PNG。旧版 128 KB 限制会跳过该文件；新版限制为 2 MB。只检查了文件与请求门槛，原生 UIImage 解码仍需在 iPhone 上确认。
+- 1.1.2 使用 Playwright／Edge 检查更大字号与纯圆点状态：七种节点数组合、浅深色、原有尺寸及 170×170／364×170／364×382 模拟尺寸。默认组合另检查旧快照提示占用一行的情况；没有指标与页脚重叠。CPU／内存／磁盘对齐卡片左边、中间及右边。大尺寸仅为布局样本，不宣称与用户手机尺寸一致。
+- 公开部署只读 `common:getPublicInfo` HTTP RPC 烟测：HTTP 200、JSON-RPC 2.0、响应 ID 匹配，站点标题正确；没有读取节点列表或状态。此结果不能证明 iPhone 的网络／运行时正常。
 
 ## 测试覆盖
 
@@ -19,7 +21,7 @@
 
 ## 官方资料核对
 
-Scripting 官方 `llms.txt` 对应 API 页：Quick Start／hooks、Script、Navigation.present／useDismiss、NavigationLink、页面 toolbar、List／Section／Form、生命周期、AppEvents.scenePhase、Status Bar & System Overlays 中的 fullScreen 示例、刷新、Text／Image／UIImage／Data／Response、HStack／VStack、frame／padding、动态 foregroundStyle／background、ShapeStyle／widgetBackground、ProgressView、Picker／Toggle、TextField／SecureField、Chart／LineChart、Widget API、AppIntent、Keychain、Storage、fetch／RequestInit。
+Scripting 官方 `llms.txt` 对应 API 页：Quick Start／hooks、Script、Navigation.present／useDismiss、NavigationLink、页面 toolbar、List／Section／Form、生命周期、AppEvents.scenePhase、Status Bar & System Overlays 中的 fullScreen 示例、刷新、Text／Image／UIImage／Data／Response、HStack／VStack、frame／padding、动态 foregroundStyle／background、ShapeStyle／widgetBackground、ProgressView、Picker／Toggle、TextField／SecureField、Chart／LineChart、Widget API、AppIntent、Keychain、Storage、fetch／RequestInit（timeout 秒数、AbortError、AbortController／signal）及 useEffect 清理。
 
 开发指南固定提交：`2991c41f42be9e50d3080c5af34315e68ebb3d86`。
 

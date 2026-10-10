@@ -14,7 +14,7 @@ import {
   capacity,
   type ProbeHistory,
 } from './model'
-import { KomariClient, errorMessage, type Fetcher } from './client'
+import { KomariClient, errorMessage, withTimeout, type Fetcher } from './client'
 export const CONFIG_KEY = 'komari.config.v1',
   CACHE_KEY = 'komari.snapshot.v1'
 const AUTH_PREFIX = 'komari.auth.'
@@ -143,25 +143,29 @@ export async function refresh(
           }
           try {
             // Komari serves its uploaded/theme icon at this public, same-site route.
-            const response = await fetch(c.baseURL + '/favicon.ico', {
-              method: 'GET',
-              timeout: 4,
-              handleRedirect: async () => null,
-            })
-            if (
-              response.ok &&
-              (response.expectedContentLength ?? 0) <= 2 * 1024 ** 2
-            ) {
-              const data = await response.data()
-              if (data.size <= 2 * 1024 ** 2) {
-                const icon = UIImage.fromData(data)?.preparingThumbnail({
-                  width: 64,
-                  height: 64,
-                })
-                const encoded = icon?.toPNGBase64String()
-                if (encoded) fresh.site.icon = encoded
+            const encoded = await withTimeout(async (signal) => {
+              const response = await fetch(c.baseURL + '/favicon.ico', {
+                method: 'GET',
+                timeout: 4,
+                signal,
+                handleRedirect: async () => null,
+              })
+              if (
+                response.ok &&
+                (response.expectedContentLength ?? 0) <= 2 * 1024 ** 2
+              ) {
+                const data = await response.data()
+                if (data.size <= 2 * 1024 ** 2) {
+                  const icon = UIImage.fromData(data)?.preparingThumbnail({
+                    width: 64,
+                    height: 64,
+                  })
+                  return icon?.toPNGBase64String()
+                }
               }
-            }
+              return undefined
+            }, 4)
+            if (encoded) fresh.site.icon = encoded
           } catch {
             /* Keep the previous decoded icon during transient errors. */
           }

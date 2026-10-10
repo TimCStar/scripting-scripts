@@ -23,7 +23,14 @@ import {
   probe,
   ratio,
 } from './model'
-import { palette, NodeCard, Reading, UpdateNote, SiteBrand } from './ui'
+import {
+  palette,
+  NodeCard,
+  Reading,
+  UpdateNote,
+  SiteBrand,
+  ConnectionIssue,
+} from './ui'
 import { Settings } from './settings'
 import { Detail } from './detail'
 import { useMonitor } from './monitor'
@@ -100,11 +107,20 @@ export function Dashboard() {
               font={10}
               lineLimit={1}
               minScaleFactor={0.7}
-              foregroundStyle={m.snapshot.cached ? palette.amber : palette.teal}
+              foregroundStyle={
+                m.error
+                  ? palette.red
+                  : m.snapshot.cached
+                    ? palette.amber
+                    : palette.teal
+              }
             >
               {m.liveNote}
             </Text>
           </HStack>
+          {m.error ? (
+            <ConnectionIssue message={m.error} busy={m.busy} retry={m.reload} />
+          ) : null}
           <HStack spacing={20}>
             <Reading
               title="在线"
@@ -147,7 +163,7 @@ export function Dashboard() {
             cached={m.snapshot.cached}
             demo={m.config.demo}
           />
-          {m.snapshot.notice ? (
+          {m.snapshot.notice && !m.error ? (
             <Text font={12} foregroundStyle={palette.muted}>
               {m.snapshot.notice}
             </Text>

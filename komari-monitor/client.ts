@@ -19,6 +19,7 @@ export type Fetcher = (
     headers: Record<string, string>
     body?: string
     timeout: number
+    signal?: AbortSignal
     handleRedirect: () => Promise<null>
   },
 ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>
@@ -32,10 +33,34 @@ class APIError extends Error {
 export function errorMessage(e: unknown): string {
   return e instanceof APIError
     ? e.message
-    : e instanceof Error &&
-        /^(节点|历史|请输入|地址|请填写|所选|组件)/.test(e.message)
-      ? e.message
-      : '连接失败或响应无效，请检查网络、地址和凭证'
+    : object(e).name === 'AbortError'
+      ? '请求超时或已取消，请检查网络或服务器'
+      : e instanceof Error &&
+          /^(节点|历史|请输入|地址|请填写|所选|组件)/.test(e.message)
+        ? e.message
+        : '连接失败或响应无效，请检查网络、地址和凭证'
+}
+/** Bound both the native fetch and body decoding; some hosts only time out headers. */
+export async function withTimeout<T>(
+  operation: (signal?: AbortSignal) => Promise<T>,
+  seconds: number,
+): Promise<T> {
+  const controller =
+    typeof AbortController === 'function' ? new AbortController() : undefined
+  let timer: number | undefined
+  try {
+    return await Promise.race([
+      operation(controller?.signal),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new APIError(`请求超时（${seconds} 秒），请检查网络或服务器`))
+          controller?.abort()
+        }, seconds * 1000)
+      }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }
 export class KomariClient {
   base: string
@@ -52,21 +77,32 @@ export class KomariClient {
     const headers: Record<string, string> = { Accept: 'application/json' }
     if (this.token) headers.Authorization = `Bearer ${this.token}`
     if (body) headers['Content-Type'] = 'application/json'
-    const response = await this.fetcher(this.base + path, {
-      method: body ? 'POST' : 'GET',
-      headers,
-      ...(body ? { body: JSON.stringify(body) } : {}),
-      timeout: 8,
-      handleRedirect: async () => null,
-    })
-    if (!response.ok)
-      throw new APIError(
-        response.status === 401 || response.status === 403
-          ? '无权读取：私有站点请填写有效 API Key'
-          : `读取失败（HTTP ${response.status}）`,
-        response.status,
-      )
-    return response.json()
+    return withTimeout(async (signal) => {
+      const response = await this.fetcher(this.base + path, {
+        method: body ? 'POST' : 'GET',
+        headers,
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        timeout: 8,
+        signal,
+        handleRedirect: async () => null,
+      })
+      if (!response.ok)
+        throw new APIError(
+          response.status === 401 || response.status === 403
+            ? '无权读取：私有站点请填写有效 API Key'
+            : `读取失败（HTTP ${response.status}）`,
+          response.status,
+        )
+      try {
+        return await response.json()
+      } catch (e) {
+        if (object(e).name === 'SyntaxError')
+          throw new APIError(
+            '服务器响应不是有效 JSON，请检查地址或站点访问验证',
+          )
+        throw e
+      }
+    }, 8)
   }
   async rpc(
     method: string,

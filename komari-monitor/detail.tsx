@@ -35,6 +35,7 @@ import {
   UpdateNote,
   TrafficMeter,
   ProbeReading,
+  ConnectionIssue,
 } from './ui'
 import { loadHistory, loadProbes } from './state'
 import { errorMessage } from './client'
@@ -83,8 +84,20 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
       if (control.active && epoch === control.epoch) {
         setHistory(result)
         setProbes(probeResult.status === 'fulfilled' ? probeResult.value : [])
+        const errors = [
+          historyResult.status === 'rejected'
+            ? `资源历史：${errorMessage(historyResult.reason)}`
+            : '',
+          probeResult.status === 'rejected'
+            ? `延迟历史：${errorMessage(probeResult.reason)}`
+            : '',
+        ].filter(Boolean)
         setHistoryNote(
-          result.length ? '' : '服务器未提供历史记录（可能未启用记录）',
+          errors.length
+            ? errors.join(' · ')
+            : result.length
+              ? ''
+              : '服务器未提供历史记录（可能未启用记录）',
         )
       }
     } catch (e) {
@@ -140,6 +153,11 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
         ),
       }}
     >
+      {m.error ? (
+        <Section>
+          <ConnectionIssue message={m.error} busy={m.busy} retry={m.reload} />
+        </Section>
+      ) : null}
       {home ? (
         <Section>
           <NavigationLink destination={home()}>
@@ -163,7 +181,10 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
                 >{`${n.region} / ${n.group}`}</Text>
                 <StatusBadge node={n} cached={m.snapshot.cached} />
               </HStack>
-              <Text font={10} foregroundStyle={palette.teal}>
+              <Text
+                font={10}
+                foregroundStyle={m.error ? palette.red : palette.teal}
+              >
                 {m.liveNote}
               </Text>
               <ProbeReading node={n} />
@@ -182,7 +203,7 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
                 demo={m.config.demo}
               />
             </VStack>
-            {m.snapshot.notice ? (
+            {m.snapshot.notice && !m.error ? (
               <Text font={11} foregroundStyle={palette.muted}>
                 {m.snapshot.notice}
               </Text>
