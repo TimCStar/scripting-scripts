@@ -1,9 +1,9 @@
 import { Widget, VStack, HStack, Text, Spacer, ProgressView, Button, Image, Link, Script, fetch } from 'scripting'
-import { barPercent, isStale, makeDemo, selectWidgetIDs, widgetLayout, localDay, type AccountView, type Window, type Config, type Layout } from './model'
+import { barPercent, isStale, makeDemo, selectWidgetIDs, widgetLayout, type AccountView, type Window, type Config, type Layout } from './model'
 import {displayName,windowDollars,visibleWindows,countdown,updateFooter,todayUsage} from './display'
 import {ProviderIcon,preloadProviderIcons,type ProviderImages} from './provider-icons'
-import { loadAccounts, type Auth } from './client'
-import { readConfig, readCache, saveCache, AUTH_KEY, identity } from './state'
+import { refreshMonitor } from './refresh'
+import { readConfig, readCache, identity } from './state'
 import { RefreshMonitorIntent } from './app_intents'
 // Neutral adaptive styling. Only the genuine logo artwork retains brand colors.
 const foreground = {light:'#1C1C1E',dark:'#F2F2F7'}
@@ -13,89 +13,110 @@ const bg = {light:'#FFFFFF',dark:'#000000'}
 const meterColor = {light:'#48484A',dark:'#D1D1D6'}
 const small = Widget.family === 'systemSmall'
 const large = Widget.family === 'systemLarge'
-const now = Date.now()
+let now = Date.now()
 /** Stale snapshots are neutral metadata; 0% is never a warning by itself. */
 function snapshotNote(w:Window,c:Config):string {
   if(w.resetsAt&&Date.parse(w.resetsAt)<=now)return '待更新'
   return isStale(w.updatedAt,c.staleMinutes,now)?'旧快照':''
 }
-function Meter({window:w,config:c,dense=false,compact=false,big=false,solo=false}:{window:Window;config:Config;dense?:boolean;compact?:boolean;big?:boolean;solo?:boolean}) {
+type MeterType = {label:number;value:number;detail:number;clock:number;gap:number}
+// Two compositions, not a hidden row in the same two-window card. The single
+// window gets the entire available width and a substantially larger type scale.
+function WindowReading({window:w,config:c,type:t}:{window:Window;config:Config;type:MeterType}) {
   const note=snapshotNote(w,c)
-  const tight=compact&&!solo
-  return <VStack alignment="leading" spacing={big&&solo?8:dense||compact?1:3} frame={{maxWidth:'infinity'}}>
-    <HStack spacing={3}>
-      <Text font={tight?11:big&&solo?20:big?17:dense||compact?12:13} fontWeight="bold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.8}>{w.label}</Text>{note?<Text font={tight||dense?7:9} foregroundStyle={muted} lineLimit={1} minScaleFactor={0.75}>{note}</Text>:null}<Spacer/>
-      <Text font={tight?10:big&&solo?44:big?19:solo&&!dense&&!compact?25:dense?11:compact?12:13} fontWeight="semibold" monospacedDigit foregroundStyle={w.percent===null?muted:meterColor}>{w.percent===null?'未知':`${Math.round(w.percent)}%`}</Text>
+  return <VStack alignment="leading" spacing={t.gap} frame={{maxWidth:'infinity'}}>
+    <HStack alignment="firstTextBaseline" spacing={3}>
+      <Text font={t.label} fontWeight="bold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.8}>{w.label}</Text>
+      {note?<Text font={8} foregroundStyle={muted} lineLimit={1} minScaleFactor={0.75}>{note}</Text>:null}
+      <Spacer/>
+      <Text font={t.value} fontWeight="semibold" monospacedDigit foregroundStyle={w.percent===null?muted:foreground} lineLimit={1} minScaleFactor={0.8}>{w.percent===null?'未知':`${Math.round(w.percent)}%`}</Text>
     </HStack>
     {w.percent!==null?<ProgressView value={(barPercent(w.percent)??0)/100} total={1} progressViewStyle="linear" tint={meterColor}/>:null}
-    <HStack spacing={4}>{w.label==='7d'?<Text font={tight?8:big&&solo?17:big?13:dense||compact?9:10} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{windowDollars(w,c,now)}</Text>:null}<Spacer/>
-    <HStack spacing={2}><Image systemName="clock" font={tight?8:big&&solo?14:10} foregroundStyle={muted}/><Text font={tight?7:big&&solo?14:big?12:dense||compact?8:9} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{countdown(w.resetsAt,now)}</Text></HStack></HStack>
+    <HStack spacing={4}>
+      {w.label==='7d'?<Text font={t.detail} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{windowDollars(w,c,now)}</Text>:null}
+      <Spacer/>
+      <HStack spacing={2}><Image systemName="clock" font={t.clock} foregroundStyle={muted}/><Text font={t.detail} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{countdown(w.resetsAt,now)}</Text></HStack>
+    </HStack>
   </VStack>
 }
+function SingleWindow({window,config,mode}:{window:Window;config:Config;mode:Layout}) {
+  const type:MeterType=mode==='largeOne'?{label:32,value:64,detail:18,clock:16,gap:10}
+    :mode==='largeRows'?{label:17,value:20,detail:9,clock:9,gap:0}
+    :mode==='small'||mode==='mediumTwo'?{label:22,value:32,detail:10,clock:9,gap:3}
+    :mode==='mediumOne'?{label:24,value:36,detail:12,clock:11,gap:3}
+    :{label:26,value:40,detail:12,clock:11,gap:5}
+  return <VStack alignment="leading" spacing={0} frame={{maxWidth:'infinity'}}><WindowReading window={window} config={config} type={type}/></VStack>
+}
+function DualWindows({windows,config,mode}:{windows:Window[];config:Config;mode:Layout}) {
+  const compact=mode==='small'||mode==='mediumTwo'
+  const dense=mode==='largeRows'
+  const type:MeterType=mode==='largeOne'?{label:23,value:32,detail:14,clock:12,gap:5}
+    :compact?{label:13,value:13,detail:7,clock:7,gap:1}
+    :dense?{label:14,value:17,detail:8,clock:8,gap:1}
+    :{label:18,value:24,detail:10,clock:9,gap:3}
+  const readings=windows.map((w,i)=><WindowReading key={String(i)} window={w} config={config} type={type}/>)
+  // Narrow cards stack windows; wide cards pair them. Neither branch leaves an
+  // empty second column or a 5h-sized placeholder after 5h is hidden.
+  return compact||mode==='largeOne'?<VStack spacing={compact?3:18} frame={{maxWidth:'infinity'}}>{readings}</VStack>
+    :<HStack alignment="top" spacing={14} frame={{maxWidth:'infinity'}}>{readings}</HStack>
+}
 function AccountCard({account:a,config:c,mode,images}:{account:AccountView;config:Config;mode:Layout;images:ProviderImages}) {
-  const windows=visibleWindows(a,c)
-  const solo=windows.length===1
+  const windows=visibleWindows(a,c),solo=windows.length===1
   const dense=mode==='largeRows',big=mode==='largeOne',compact=mode==='small'||mode==='mediumTwo'
   const roomy=big||mode==='largeTwo'||mode==='mediumOne'
   const status=a.error?'连接异常':a.status!=='active'&&a.status!=='未知'?'账号异常':''
   const header=<HStack spacing={dense?5:7} padding={{trailing:24}}>
     <ProviderIcon images={images} provider={a.provider} size={big?40:dense?20:compact?24:28}/>
-    <Text font={big?21:dense?12:compact?13:14} fontWeight="semibold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.75}>{displayName(a,c.displayNames)}</Text>{compact&&status?<Text font={8} foregroundStyle={warning} lineLimit={1}>异常</Text>:null}<Spacer/>
+    <Text font={big?21:dense?12:compact?13:14} fontWeight="semibold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.75}>{displayName(a,c.displayNames)}</Text>
+    {status?<Text font={8} foregroundStyle={warning} lineLimit={1}>{compact||dense?'异常':status}</Text>:null}<Spacer/>
     {roomy&&a.provider==='openai'&&a.resetCredits?<Link url={Script.createRunSingleURLScheme(Script.name,{action:'reset',accountID:String(a.id)})}><Text font={10} foregroundStyle={foreground}>重置…</Text></Link>:null}
   </HStack>
-  const meters=windows.length?(dense||mode==='largeTwo'?<HStack alignment="top" spacing={12}>{windows.map((w,i)=><Meter key={String(i)} window={w} config={c} dense={dense} solo={solo}/>)}</HStack>:<VStack spacing={big?20:compact?4:7}>{windows.map((w,i)=><Meter key={String(i)} window={w} config={c} compact={compact} big={big} solo={solo}/>)}</VStack>):<Text font={big?13:10} foregroundStyle={muted} lineLimit={2}>{a.error?'暂时无法读取额度':'暂无额度快照'}</Text>
+  const meters=solo?<SingleWindow window={windows[0]} config={c} mode={mode}/>:windows.length?<DualWindows windows={windows} config={c} mode={mode}/>:<Text font={big?13:10} foregroundStyle={muted} lineLimit={2}>{a.error?'暂时无法读取额度':'暂无额度快照'}</Text>
   const credits=a.resetCredits
-  const creditLine=credits&&credits.available!==null?<Text font={big?11:9} foregroundStyle={muted} lineLimit={1}>重置券 {credits.available} 次 · 缓存</Text>:null
-  // Only the DATA region expands: the header stays anchored above it, while its
-  // intrinsic-height contents are vertically centered in the remaining space.
-  const sideHeader=mode==='mediumOne'&&!solo
-  const data=<VStack alignment="leading" spacing={sideHeader?undefined:big&&solo?24:big?14:dense?2:compact?3:6} frame={{maxWidth:'infinity'}}>{meters}{!sideHeader&&roomy&&!(mode==='mediumOne'&&solo)?creditLine:null}{!sideHeader&&status&&!dense&&!compact?<Text font={9} foregroundStyle={warning}>{status}</Text>:null}</VStack>
-  return <VStack alignment="leading" spacing={big?12:dense?2:compact?3:6} padding={{vertical:compact||dense?0:2}} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
-    {mode==='mediumOne'&&!solo?<HStack alignment="top" spacing={18} frame={{maxWidth:'infinity',maxHeight:'infinity'}}><VStack alignment="leading" spacing={10} frame={{maxWidth:'infinity'}}>{header}{creditLine}{status?<Text font={9} foregroundStyle={warning}>{status}</Text>:null}</VStack><VStack padding={{top:24}} frame={{maxWidth:'infinity',maxHeight:'infinity',alignment:'center'}}>{data}</VStack></HStack>:<VStack alignment="leading" spacing={big&&solo?24:big?14:dense?2:compact?3:6} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>{header}<VStack frame={{maxWidth:'infinity',maxHeight:'infinity',alignment:'center'}}>{data}</VStack></VStack>}
+  const creditLine=roomy&&!(mode==='mediumOne'&&solo)&&credits&&credits.available!==null?<Text font={big?11:9} foregroundStyle={muted} lineLimit={1}>重置券 {credits.available} 次 · 缓存</Text>:null
+  const data=<VStack alignment="leading" spacing={big?12:3} frame={{maxWidth:'infinity'}}>{meters}{creditLine}</VStack>
+  // Only this region expands. Its intrinsic DATA remains vertically centered;
+  // the identity row and the daily/update footer cannot drift to the edges.
+  return <VStack alignment="leading" spacing={big?10:2} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
+    {header}
+    <VStack frame={{maxWidth:'infinity',maxHeight:'infinity',alignment:'center'}}>{data}</VStack>
   </VStack>
 }
 async function run(){
   const artwork=preloadProviderIcons()
-  let config=readConfig(),notice='',accounts:AccountView[]=[],savedAt=''
+  let config=readConfig(),notice='',accounts:AccountView[]=[]
   const rootConfig=config
   // Parameter IDs determine both selection and adaptive density, never credentials.
   try{config={...config,accountIDs:selectWidgetIDs(config,Widget.parameter,Widget.family)}}catch(e){notice=e instanceof Error?e.message:'参数无效'}
-  if(config.demo&&!notice){const demo=makeDemo(now);accounts=config.accountIDs.map(id=>demo.find(a=>a.id===id)).filter((a):a is AccountView=>!!a);savedAt=new Date(now).toISOString();notice='演示 · 虚构数据'}
+  if(config.demo&&!notice){const demo=makeDemo(now);accounts=config.accountIDs.map(id=>demo.find(a=>a.id===id)).filter((a):a is AccountView=>!!a);notice='演示 · 虚构数据'}
   else if(!notice){
-    const allConfig=rootConfig
-    const cache=readCache(allConfig)
-    accounts=config.accountIDs.map(id=>cache?.accounts.find(x=>x.id===id)).filter((x):x is AccountView=>!!x)
-    savedAt=cache?.fetchedAt||''
-    const day=localDay(now)
-    if(accounts.some(a=>a.todayDate&&day&&(a.todayDate!==day.date||a.todayTimeZone!==day.timeZone)) || !cache || isStale(cache.fetchedAt,config.refreshMinutes,now) || accounts.length!==config.accountIDs.length || accounts.some(a=>isStale(a.fetchedAt,config.refreshMinutes,now))){
-      try{
-        const saved=Keychain.get(AUTH_KEY);if(!saved)throw new Error('请打开脚本配置管理凭证')
-        const auth=JSON.parse(saved) as Auth & {baseURL:string;revision?:string}
-        if(auth.baseURL!==config.baseURL || auth.revision!==config.revision || !auth.token || !['apiKey','jwt'].includes(auth.kind))throw new Error('请重新保存管理凭证')
-        const result=await loadAccounts(config,auth,fetch,accounts);accounts=result.accounts;savedAt=result.fetchedAt
-        if(Object.keys(result.errors).length)notice='连接异常 · 显示缓存'
-        const merged=[...(cache?.accounts||[]).filter(a=>!config.accountIDs.includes(a.id)),...accounts]
-        if(!saveCache(allConfig,merged,savedAt))notice=notice||'缓存保存失败'
-      }catch(e){notice=e instanceof Error && /^请/.test(e.message)?e.message:'无法读取凭证或服务器'}
-    }
+    const cache=readCache(rootConfig)
+    accounts=config.accountIDs.map(id=>cache?.accounts.find(x=>x.id===id)).filter((a):a is AccountView=>!!a)
+    // Always reread the server when a timeline actually executes. The App Intent
+    // and widget run in independent hosts; Storage persistence may still lag.
+    const outcome=await refreshMonitor({accountIDs:config.accountIDs,identity:identity(rootConfig)},fetch)
+    if(outcome.status==='discarded'||outcome.status==='ignored')accounts=[]
+    else if(outcome.accounts)accounts=outcome.accounts
+    notice=outcome.notice
     if(accounts.some(a=>a.error))notice=notice||'部分数据未更新'
   }
+  now=Date.now()
   const layout=widgetLayout(Widget.family,accounts.length)
-  const smallDual=small&&accounts.length>0&&visibleWindows(accounts[0],config).length>1
-  const mediumDual=layout==='mediumTwo'&&accounts.some(a=>visibleWindows(a,config).length>1)
   // Official widget samples use the actual host dimensions for full-surface backgrounds.
-  // No outer padding or inner card fill: short content must not create a colored strip.
+  // The background has no inset; content has a modest, consistent safe inset.
   const view=<VStack spacing={0} frame={Widget.displaySize} widgetBackground={bg}>
-    <VStack overlay={accounts.length?{alignment:'topTrailing',content:<Button buttonStyle="plain" intent={RefreshMonitorIntent({accountIDs:config.accountIDs,identity:identity(rootConfig)})}><Image systemName="arrow.clockwise" font={14} foregroundStyle={foreground} frame={{width:24,height:24}}/></Button>}:undefined} alignment="leading" spacing={layout==='largeRows'?4:large?8:2} padding={small?{horizontal:14,vertical:smallDual?4:8}:mediumDual?{horizontal:12,vertical:8}:12} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
+    <VStack padding={{horizontal:small?14:12,vertical:large?12:10}} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
+    <VStack overlay={accounts.length?{alignment:'topTrailing',content:<Button buttonStyle="plain" intent={RefreshMonitorIntent({accountIDs:config.accountIDs,identity:identity(rootConfig)})}><Image systemName="arrow.clockwise" font={14} foregroundStyle={foreground} frame={{width:24,height:24}}/></Button>}:undefined} alignment="leading" spacing={2} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
     {accounts.length===0?<VStack alignment="leading" spacing={8}><Text font={15} fontWeight="semibold" foregroundStyle={foreground}>连接你的用量</Text><Text font={11} foregroundStyle={muted}>{notice||'打开脚本，配置服务器与账号。'}</Text></VStack>:
       layout==='mediumOne'?<AccountCard images={artwork.images} account={accounts[0]} config={config} mode="mediumOne"/>:
-      large?<VStack spacing={layout==='largeOne'?10:layout==='largeRows'?2:4} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode={layout}/>)}</VStack>:
+      large?<VStack spacing={layout==='largeRows'?2:8} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode={layout}/>)}</VStack>:
       small?<AccountCard images={artwork.images} account={accounts[0]} config={config} mode="small"/>:
       <HStack alignment="top" spacing={10} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode="mediumTwo"/>)}</HStack>}
     {accounts.length===0?<Spacer/>:null}
     {notice&&accounts.length?<Text font={8} foregroundStyle={muted} lineLimit={1} frame={{maxWidth:'infinity',alignment:'center'}} multilineTextAlignment="center">{notice}</Text>:null}
     {accounts.length?<VStack spacing={1} frame={{maxWidth:'infinity'}}>{accounts.map(a=><Text key={String(a.id)} font={8} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.65} frame={{maxWidth:'infinity',alignment:'center'}} multilineTextAlignment="center">{accounts.length>1?`${displayName(a,config.displayNames)} · ${todayUsage(a,config,now)}`:todayUsage(a,config,now)}</Text>)}</VStack>:null}
     {accounts.length?<Text font={8} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75} frame={{maxWidth:'infinity',alignment:'center'}} multilineTextAlignment="center">{updateFooter(accounts)}</Text>:null}
+    </VStack>
     </VStack>
   </VStack>
   Widget.present(view,{policy:'after',date:new Date(now+config.refreshMinutes*60_000)})

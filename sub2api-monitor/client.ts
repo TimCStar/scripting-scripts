@@ -11,7 +11,8 @@ function data(value: unknown): unknown {
 export async function loadAccounts(config: Config, auth: Auth, fetcher: FetchLike, previous: AccountView[] = []): Promise<LoadResult> {
   // Closed GET routes only: account, local usage/stats and local usage logs.
   // Never call account /usage, OpenAI /quota, inference, reset, refresh or token endpoints.
-  const headers:Record<string,string> = auth.kind === 'jwt' ? {Authorization:`Bearer ${auth.token}`} : {'x-api-key':auth.token}
+  const startedAt=new Date().toISOString()
+  const headers:Record<string,string> = {...(auth.kind === 'jwt' ? {Authorization:`Bearer ${auth.token}`} : {'x-api-key':auth.token}),Accept:'application/json','Cache-Control':'no-cache, no-store, max-age=0',Pragma:'no-cache'}
   async function get(path: string): Promise<unknown> {
     const response = await fetcher(`${config.baseURL}/api/v1/admin/${path}`,{method:'GET',headers,timeout:8,handleRedirect:async()=>null})
     if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? '管理凭证失效或权限不足' : response.status === 404 ? '接口或账号不存在' : `服务器暂不可用（${response.status}）`)
@@ -23,6 +24,7 @@ export async function loadAccounts(config: Config, auth: Auth, fetcher: FetchLik
     try {
       const raw = await get(`accounts/${id}`)
       const account = normalizeAccount(raw,null,{})
+      account.readStartedAt=startedAt
       if (account.id !== id) throw new Error('账号响应不匹配')
       if(account.provider==='openai'||account.provider==='anthropic') {
         const weekly=account.windows.find(w=>w.label==='7d')

@@ -39,8 +39,79 @@ test('credentials or configuration changed during refresh discard result',async(
  for(const change of ['auth','config']){const f=fixture(),before=f.data.get(s.CACHE_KEY);await refreshMonitor(f.request,async(...args)=>{if(change==='auth')f.changeAuth(null);else f.data.set(s.CONFIG_KEY,{...f.config,revision:'new'});return f.fetcher(...args)});assert.equal(f.data.get(s.CACHE_KEY),before)}
 })
 test('repeated concurrent taps share host guard; later intentional tap still works',async()=>{
- const f=fixture();let release;const wait=new Promise(r=>{release=r});const first=refreshMonitor(f.request,async(...args)=>{await wait;return f.fetcher(...args)});await refreshMonitor(f.request,f.fetcher);assert.equal(f.calls.length,0);release();await first;const n=f.calls.length;await refreshMonitor(f.request,f.fetcher);assert.ok(f.calls.length>n)
+ const f=fixture();let release;const wait=new Promise(r=>{release=r});const first=refreshMonitor(f.request,async(...args)=>{await wait;return f.fetcher(...args)});const second=refreshMonitor(f.request,f.fetcher);assert.equal(first,second);assert.equal(f.calls.length,0);release();await Promise.all([first,second]);const n=f.calls.length;await refreshMonitor(f.request,f.fetcher);assert.ok(f.calls.length>n)
 })
 test('App Intent awaits passive refresh then requests reload even when refresh fails',async()=>{
  const source=await readFile(new URL('../app_intents.tsx',import.meta.url),'utf8');assert.match(source,/await refreshMonitor\(selection,fetch\)/);assert.match(source,/finally \{ Widget.reloadAll\(\) \}/);assert.ok(!/operations|reset-panel|action:/.test(source));assert.ok(source.includes('AppIntentProtocol.AppIntent'))
+})
+
+test('cache write failure is an explicit failed outcome with usable in-memory server data',async()=>{
+ const f=fixture(),before=f.data.get(s.CACHE_KEY)
+ globalThis.Storage.set=()=>false
+ const result=await refreshMonitor(f.request,f.fetcher)
+ assert.equal(result.status,'failed');assert.equal(result.notice,'缓存保存失败')
+ assert.equal(result.accounts.find(a=>a.id===101).name,'fresh');assert.equal(f.data.get(s.CACHE_KEY),before)
+})
+test('a different visible-account selection is not lost behind a running refresh',async()=>{
+ const f=fixture();let release;const wait=new Promise(r=>{release=r})
+ const first=refreshMonitor(f.request,async(...args)=>{await wait;return f.fetcher(...args)})
+ const second=await refreshMonitor({...f.request,accountIDs:[102]},async(url,init)=>{
+  const response=await f.fetcher(url,init)
+  return url.includes('/accounts/')?{...response,json:async()=>({code:0,data:{id:102,name:'second',platform:'other',status:'active',extra:{}}})}:response
+ })
+ assert.equal(second.status,'ok');assert.equal(second.accounts[0].name,'second');release();await first
+ assert.equal(s.readCache(f.config).accounts.find(a=>a.id===102).name,'second')
+})
+test('reload in a separate host rereads changed server values despite fresh but unflushed Storage',async()=>{
+ const f=fixture(),persisted=new Map(structuredClone([...f.data])),writes=[]
+ // Intent host sees its accepted writes; the new widget host still sees old disk.
+ globalThis.Storage={get:k=>f.data.get(k),set:(k,v)=>{f.data.set(k,v);writes.push([k,v]);return true}}
+ const intent=await refreshMonitor(f.request,f.fetcher);assert.equal(intent.status,'ok')
+ assert.equal(persisted.get(s.CACHE_KEY).accounts[0].name,f.accounts[0].name)
+ globalThis.Storage={get:k=>persisted.get(k),set:(k,v)=>{persisted.set(k,v);return true}}
+ const snapshot='2026-10-10T01:02:03Z'
+ const reloaded=await refreshMonitor(f.request,async(url,init)=>{
+  const response=await f.fetcher(url,init)
+  return url.includes('/accounts/')?{...response,json:async()=>({code:0,data:{id:101,name:'server changed again',platform:'openai',status:'active',extra:{codex_7d_used_percent:84,codex_usage_updated_at:snapshot}}})}:response
+ })
+ assert.equal(reloaded.status,'ok');assert.equal(reloaded.accounts[0].name,'server changed again')
+ assert.equal(reloaded.accounts[0].windows[0].percent,84)
+ assert.equal(reloaded.accounts[0].windows[0].updatedAt,new Date(snapshot).toISOString())
+ assert.ok(writes.length);assert.equal(s.readCache(f.config).accounts[0].name,'server changed again')
+ // Every network request revalidates HTTP cache; nocache stats keep local-DB scope.
+ for(const call of f.calls){assert.match(call.init.headers['Cache-Control'],/no-cache/);assert.match(call.init.headers['Cache-Control'],/no-store/)}
+})
+test('out-of-order separate execution hosts cannot replace a newer read with a slow old response',async()=>{
+ const f=fixture()
+ // A fresh module has independent in-flight state, just like the widget host.
+ await writeFile(join(dir,'refresh-other.ts'),await readFile(join(dir,'refresh.ts'),'utf8'))
+ const other=await import(pathToFileURL(join(dir,'refresh-other.ts')))
+ let release;const wait=new Promise(r=>{release=r})
+ const old=refreshMonitor(f.request,async(url,init)=>{
+  if(url.includes('/accounts/'))await wait
+  const response=await f.fetcher(url,init)
+  return url.includes('/accounts/')?{...response,json:async()=>({code:0,data:{id:101,name:'older response',platform:'other',status:'active',extra:{}}})}:response
+ })
+ await new Promise(r=>setTimeout(r,8))
+ const newer=await other.refreshMonitor(f.request,f.fetcher)
+ assert.equal(newer.accounts[0].name,'fresh')
+ release();const older=await old
+ assert.equal(older.accounts[0].name,'fresh');assert.equal(s.readCache(f.config).accounts.find(a=>a.id===101).name,'fresh')
+})
+test('network failure and missing credentials report failure without claiming a new successful read',async()=>{
+ const f=fixture(),before=f.accounts[0].fetchedAt
+ const offline=await refreshMonitor(f.request,async()=>{throw Error('DO_NOT_EXPOSE_TOKEN')})
+ assert.equal(offline.status,'failed');assert.equal(offline.accounts[0].fetchedAt,before)
+ assert.ok(!JSON.stringify(offline).includes('DO_NOT_EXPOSE_TOKEN'))
+ f.changeAuth(null);const noAuth=await refreshMonitor(f.request,f.fetcher)
+ assert.equal(noAuth.status,'failed');assert.match(noAuth.notice,/凭证/);assert.equal(f.calls.length,0)
+})
+
+test('a credential change cannot join the old in-flight operation',async()=>{
+ const f=fixture();let release;const wait=new Promise(r=>{release=r})
+ const old=refreshMonitor(f.request,async(...args)=>{await wait;return f.fetcher(...args)})
+ f.changeAuth(JSON.stringify({baseURL:f.config.baseURL,revision:f.config.revision,kind:'apiKey',token:'replacement-fixture'}))
+ const current=await refreshMonitor(f.request,async(url,init)=>{assert.equal(init.headers['x-api-key'],'replacement-fixture');return f.fetcher(url,init)})
+ assert.equal(current.status,'ok');release();assert.equal((await old).status,'discarded')
+ assert.equal(s.readCache(f.config).accounts[0].name,'fresh')
 })

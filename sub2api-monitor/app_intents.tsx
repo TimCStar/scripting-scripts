@@ -5,7 +5,10 @@ export const RefreshMonitorIntent = AppIntentManager.register({
   name:'RefreshMonitorIntent',
   protocol:AppIntentProtocol.AppIntent,
   perform:async (selection:RefreshSelection) => {
-    try { await refreshMonitor(selection,fetch) }
+    try {
+      const outcome=await refreshMonitor(selection,fetch)
+      if(outcome.status==='failed'||outcome.status==='discarded'||outcome.status==='ignored'&&outcome.notice)throw new Error(outcome.notice)
+    }
     finally { Widget.reloadAll() }
   },
 })

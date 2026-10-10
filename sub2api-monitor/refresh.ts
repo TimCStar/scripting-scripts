@@ -1,33 +1,42 @@
 import { loadAccounts, type Auth, type FetchLike } from './client'
-import { readConfig, readCache, saveCache, AUTH_KEY, identity } from './state'
+import { readConfig, readCache, commitCache, AUTH_KEY, identity } from './state'
+import type { AccountView } from './model'
 export type RefreshSelection = {accountIDs:number[];identity:string}
-let running=false
-/** Force passive local Sub2API reads, even when cache is fresh. Serialized within
- * this execution host; overlapping hosts merge freshest successful account reads. */
-export async function refreshMonitor(selection:RefreshSelection,fetcher:FetchLike):Promise<void> {
-  if(running)return
-  running=true
-  try {
-    const config=readConfig(),key=identity(config)
-    if(config.demo)return
-    // Widget parameters are untrusted selectors, never credentials or endpoints.
-    if(!selection||selection.identity!==key||!Array.isArray(selection.accountIDs)||!selection.accountIDs.length||selection.accountIDs.length>4||new Set(selection.accountIDs).size!==selection.accountIDs.length||selection.accountIDs.some(id=>!Number.isSafeInteger(id)||!config.accountIDs.includes(id)))return
-    const saved=Keychain.get(AUTH_KEY)
-    if(!saved)return
-    const auth=JSON.parse(saved) as Auth & {baseURL:string;revision?:string}
-    if(auth.baseURL!==config.baseURL||auth.revision!==config.revision||typeof auth.token!=='string'||!auth.token||!['apiKey','jwt'].includes(auth.kind))return
-    const cache=readCache(config)
-    const result=await loadAccounts({...config,accountIDs:selection.accountIDs},auth,fetcher,cache?.accounts||[])
-    // A configuration/credential change during fetch must not write old-server data.
-    if(identity(readConfig())!==key||Keychain.get(AUTH_KEY)!==saved)return
-    const latest=readCache(config)
-    const updated=result.accounts.map(a=>{
-      const prior=latest?.accounts.find(x=>x.id===a.id)
-      return prior&&Date.parse(prior.fetchedAt)>Date.parse(a.fetchedAt||'1970-01-01')?prior:a
-    })
-    saveCache(config,[...(latest?.accounts||[]).filter(a=>!selection.accountIDs.includes(a.id)),...updated],result.fetchedAt)
-  } catch {
-    // Keychain unavailable / malformed credentials: retain all existing snapshots.
-    // loadAccounts records per-account network errors without exposing raw errors.
-  } finally { running=false }
+export type RefreshOutcome = {status:'ok'|'partial'|'failed'|'ignored'|'discarded';notice:string;accounts?:AccountView[]}
+const pending=new Map<string,{credential:string;work:Promise<RefreshOutcome>}>()
+/** Every timeline execution and button action revalidates passive Sub2API reads.
+ * Cache is an offline fallback, never a reason to skip the server. Matching rapid
+ * taps await the SAME operation; different widget selections are not dropped.
+ * Storage has no cross-process transaction/flush API, so a reloaded widget also
+ * reads the server rather than depending on the intent's asynchronous cache write.
+ */
+export function refreshMonitor(selection:RefreshSelection,fetcher:FetchLike):Promise<RefreshOutcome> {
+  const config=readConfig(),key=identity(config)
+  if(config.demo)return Promise.resolve({status:'ignored',notice:''})
+  if(!selection||selection.identity!==key||!Array.isArray(selection.accountIDs)||!selection.accountIDs.length||selection.accountIDs.length>4||new Set(selection.accountIDs).size!==selection.accountIDs.length||selection.accountIDs.some(id=>!Number.isSafeInteger(id)||!config.accountIDs.includes(id)))return Promise.resolve({status:'ignored',notice:'配置已改变，请重新载入小组件'})
+  let saved:string|null
+  try{saved=Keychain.get(AUTH_KEY)}catch{return Promise.resolve({status:'failed',notice:'无法读取凭证或服务器'})}
+  if(!saved)return Promise.resolve({status:'failed',notice:'请打开脚本配置管理凭证'})
+  const pendingKey=key+'|'+selection.accountIDs.join(',')
+  const existing=pending.get(pendingKey)
+  if(existing?.credential===saved)return existing.work
+  const work=(async():Promise<RefreshOutcome>=>{
+    try {
+      let auth:Auth & {baseURL:string;revision?:string}
+      try{auth=JSON.parse(saved)}catch{return {status:'failed',notice:'请重新保存管理凭证'}}
+      if(!auth||auth.baseURL!==config.baseURL||auth.revision!==config.revision||typeof auth.token!=='string'||!auth.token||!['apiKey','jwt'].includes(auth.kind))return {status:'failed',notice:'请重新保存管理凭证'}
+      const cache=readCache(config)
+      const result=await loadAccounts({...config,accountIDs:selection.accountIDs},auth,fetcher,cache?.accounts||[])
+      // A credential/config change invalidates the entire in-flight result.
+      if(identity(readConfig())!==key||Keychain.get(AUTH_KEY)!==saved)return {status:'discarded',notice:'配置已改变，请重新载入小组件'}
+      const committed=commitCache(config,result.accounts,result.fetchedAt)
+      const accounts=selection.accountIDs.map(id=>committed.accounts.find(a=>a.id===id)).filter((a):a is AccountView=>!!a)
+      const failed=Object.keys(result.errors).length
+      return {status:!committed.saved||failed===selection.accountIDs.length?'failed':failed?'partial':'ok',notice:!committed.saved?'缓存保存失败':failed?'连接异常 · 显示缓存':'',accounts}
+    }catch{return {status:'failed',notice:'无法读取凭证或服务器'}}
+  })()
+  pending.set(pendingKey,{credential:saved,work})
+  // No ignored rejection from finally; the work itself returns safe outcomes.
+  void work.then(()=>{if(pending.get(pendingKey)?.work===work)pending.delete(pendingKey)})
+  return work
 }
