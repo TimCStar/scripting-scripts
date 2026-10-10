@@ -1,12 +1,12 @@
 {
   "Komari-Nightflight.scripting": {
-    "sha256": "605371b5925fb55d7d409af4905fc6e98249e6c30acc0881e00ba311a45f4450",
-    "bytes": 39186,
+    "sha256": "7ae351ea99f5443270aaa0095f7cff15451cdf2e2a8cf375c6bee31bd48bcd05",
+    "bytes": 40901,
     "files": 14
   },
   "Komari-Nightflight-source.zip": {
-    "sha256": "de23cfea9ed7678496773ebd84ceef2dd08cde2e2191891695dd113693b21da7",
-    "bytes": 490153,
+    "sha256": "342f29854cafd298755db9244318c6e8622041fcec884559e7b67518d94cc1f2",
+    "bytes": 523175,
     "files": 24
   }
 }

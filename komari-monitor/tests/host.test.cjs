@@ -348,3 +348,110 @@ test('rerendered page removes the original scene listener rather than its new cl
   rerender.disappear()
   a.equal(h.globals.AppEvents.scenePhase.listeners.size, 0)
 })
+
+test('upgrading retries a legacy failed favicon cache and decodes a 218 KB PNG served as ico', async () => {
+  const { h, s, c } = setup()
+  fetcher(h)
+  await s.refresh(c)
+  const saved = h.data.get(s.CACHE_KEY)
+  saved.snapshot.site = {
+    title: '星海监控',
+    iconCheckedAt: new Date().toISOString(),
+  }
+  const original = h.bridge.fetch
+  let decoded = 0,
+    requests = 0
+  h.globals.UIImage.fromData = (data) => {
+    a.equal(data.size, 222845)
+    decoded++
+    return {
+      preparingThumbnail: () => ({ toPNGBase64String: () => 'thumbnail' }),
+    }
+  }
+  h.bridge.fetch = async (url, init) => {
+    if (!url.endsWith('/favicon.ico')) return original(url, init)
+    requests++
+    return {
+      ok: true,
+      expectedContentLength: 222845,
+      data: async () => ({ size: 222845 }),
+    }
+  }
+  const fresh = await s.refresh(c)
+  a.equal(fresh.site.icon, 'thumbnail')
+  a.equal(fresh.site.iconVersion, 2)
+  a.equal(decoded, 1)
+  await s.refresh(c)
+  a.equal(requests, 1)
+})
+
+test('missing favicon retries after five minutes and a decode failure preserves a working icon', async () => {
+  const { h, s, c } = setup()
+  fetcher(h)
+  await s.refresh(c)
+  const original = h.bridge.fetch
+  let requests = 0
+  h.bridge.fetch = async (url, init) => {
+    if (!url.endsWith('/favicon.ico')) return original(url, init)
+    requests++
+    return {
+      ok: true,
+      expectedContentLength: 20,
+      data: async () => ({ size: 20 }),
+    }
+  }
+  await s.refresh(c)
+  a.equal(requests, 0)
+  h.data.get(s.CACHE_KEY).snapshot.site.iconCheckedAt = new Date(
+    Date.now() - 6 * 60_000,
+  ).toISOString()
+  await s.refresh(c)
+  a.equal(requests, 1)
+  const site = h.data.get(s.CACHE_KEY).snapshot.site
+  site.icon = 'working-icon'
+  site.iconCheckedAt = new Date(Date.now() - 7 * 3600_000).toISOString()
+  const fresh = await s.refresh(c)
+  a.equal(requests, 2)
+  a.equal(fresh.site.icon, 'working-icon')
+})
+
+test('limited and unlimited traffic retain the same meter rows in a two-node medium widget', async () => {
+  const h = harness({ family: 'systemMedium', width: 329, height: 155 })
+  h.load('widget.tsx')
+  await h.globals.completion
+  const snapshot = h.load('model.ts').demoSnapshot()
+  snapshot.nodes[0].trafficLimit = null
+  snapshot.nodes[1].trafficLimit = 1024 ** 4
+  const view = h
+    .load('widget.tsx')
+    .WidgetView({
+      snapshot,
+      family: 'systemMedium',
+      ids: snapshot.nodes.slice(0, 2).map((n) => n.id),
+    })
+  const links = walk(view).filter(
+    (n) => n.type === 'Link' && n.props.url.includes('?node='),
+  )
+  const meters = links.map((link) =>
+    walk(link).find(
+      (n) =>
+        n.type === 'VStack' &&
+        n.children.some((c) => c.type === 'ProgressView'),
+    ),
+  )
+  a.ok(meters.every(Boolean))
+  a.deepEqual(
+    meters[0].children.map((n) => n.type),
+    meters[1].children.map((n) => n.type),
+  )
+  a.equal(
+    meters[0].children.find((n) => n.type === 'ProgressView').props.value,
+    0,
+  )
+  const labels = walk(meters[0])
+    .filter((n) => n.type === 'Text')
+    .map((n) => n.children.join(''))
+    .join('|')
+  a.match(labels, /0\.0%/)
+  a.match(labels, /\/ ∞/)
+})

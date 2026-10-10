@@ -65,7 +65,7 @@ export function SiteBrand({
     ? UIImage.fromBase64String(snapshot.site.icon)
     : null
   return (
-    <HStack spacing={6} frame={{ maxWidth: 'infinity' }}>
+    <HStack spacing={6} frame={{ maxWidth: 'infinity', alignment: 'leading' }}>
       {icon ? (
         <Image
           image={icon}
@@ -95,63 +95,77 @@ export function SiteBrand({
 export function TrafficMeter({
   node,
   compact = false,
+  fontSize,
 }: {
   node: Node
   compact?: boolean
+  fontSize?: number
 }) {
   const amount = traffic(node),
     limit =
       node.trafficLimit && node.trafficLimit > 0 ? node.trafficLimit : null,
     value = ratio(amount, limit)
+  const font = fontSize ?? (compact ? 9 : 12)
   return (
     <VStack
       alignment="leading"
-      spacing={compact ? 2 : 6}
-      frame={{ maxWidth: 'infinity' }}
+      spacing={compact ? 2 : 5}
+      frame={{ maxWidth: 'infinity', alignment: 'leading' }}
     >
       <HStack spacing={4}>
-        <Text font={compact ? 9 : 11} foregroundStyle={palette.muted}>
+        <Text font={font} foregroundStyle={palette.muted}>
           流量
         </Text>
         <Spacer />
         <Text
-          font={compact ? 9 : 13}
-          fontWeight="semibold"
+          font={font}
           monospacedDigit
           foregroundStyle={
             value !== null && value >= 90 ? palette.amber : palette.ink
           }
           lineLimit={1}
-          minScaleFactor={0.7}
         >
-          {bytes(amount)}
-          {limit !== null ? ` / ${bytes(limit)}` : ''}
+          {limit === null
+            ? '0.0%'
+            : value === null
+              ? '—'
+              : `${value.toFixed(1)}%`}
         </Text>
       </HStack>
-      {value !== null ? (
-        <ProgressView
-          value={Math.min(value, 100)}
-          total={100}
-          progressViewStyle="linear"
-          tint={value >= 90 ? palette.amber : palette.teal}
-        />
-      ) : null}
+      <ProgressView
+        value={value === null ? 0 : Math.min(value, 100)}
+        total={100}
+        progressViewStyle="linear"
+        tint={value !== null && value >= 90 ? palette.amber : palette.teal}
+      />
+      <Text
+        font={font}
+        monospacedDigit
+        foregroundStyle={palette.muted}
+        lineLimit={1}
+        minScaleFactor={0.7}
+      >
+        {bytes(amount)} / {limit === null ? '∞' : bytes(limit)}
+      </Text>
       {!compact ? (
         <Text font={10} foregroundStyle={palette.muted} lineLimit={1}>
           {limit
-            ? `${percent(value)} 已用 · ${node.trafficType} 计量 · 余量 ${bytes(amount === null ? null : Math.max(0, limit - amount))}`
-            : '累计上报流量 · 未设置额度'}
+            ? `${node.trafficType} 计量 · 余量 ${bytes(amount === null ? null : Math.max(0, limit - amount))}`
+            : '累计上报流量 · 无额度限制'}
         </Text>
       ) : null}
     </VStack>
   )
 }
+
 export function ProbeReading({
   node,
   compact = false,
+  fontSize,
 }: {
   node: Node
   compact?: boolean
+  fontSize?: number
 }) {
   const p = probe(node)
   return (
@@ -167,7 +181,7 @@ export function ProbeReading({
       ) : null}
       <HStack spacing={4}>
         <Text
-          font={compact ? 9 : 12}
+          font={fontSize ?? (compact ? 9 : 12)}
           monospacedDigit
           foregroundStyle={palette.blue}
           lineLimit={1}
@@ -177,7 +191,7 @@ export function ProbeReading({
         </Text>
         <Spacer />
         <Text
-          font={compact ? 9 : 12}
+          font={fontSize ?? (compact ? 9 : 12)}
           monospacedDigit
           foregroundStyle={(p.loss ?? 0) > 0 ? palette.amber : palette.teal}
           lineLimit={1}
@@ -426,13 +440,7 @@ export function NodeCard({
       <VStack
         alignment="leading"
         spacing={dense ? 4 : 8}
-        padding={dense ? 0 : 8}
-        background={
-          dense
-            ? undefined
-            : { style: palette.wash, shape: { type: 'rect', cornerRadius: 12 } }
-        }
-        frame={{ maxWidth: 'infinity' }}
+        frame={{ maxWidth: 'infinity', alignment: 'leading' }}
       >
         <TrafficMeter node={node} compact={dense} />
         <ProbeReading node={node} compact={dense} />

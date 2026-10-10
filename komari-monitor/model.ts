@@ -74,7 +74,12 @@ export type Snapshot = {
   transport: 'rpc' | 'rest' | 'demo'
   notice?: string
   cached?: boolean
-  site?: { title: string; icon?: string; iconCheckedAt?: string }
+  site?: {
+    title: string
+    icon?: string
+    iconCheckedAt?: string
+    iconVersion?: number
+  }
 }
 export function object(x: unknown): Record<string, unknown> {
   return x !== null && typeof x === 'object' && !Array.isArray(x)

@@ -130,13 +130,16 @@ export async function refresh(
         const oldSite = cache?.site
         fresh.site = { ...oldSite, ...fresh.site }
         if (
+          oldSite?.iconVersion !== 2 ||
           !oldSite?.iconCheckedAt ||
-          Date.now() - Date.parse(oldSite.iconCheckedAt) > 6 * 3600_000
+          Date.now() - Date.parse(oldSite.iconCheckedAt) >
+            (oldSite.icon ? 6 * 3600_000 : 5 * 60_000)
         ) {
           fresh.site = {
             ...fresh.site,
             title: fresh.site?.title || '',
             iconCheckedAt: new Date().toISOString(),
+            iconVersion: 2,
           }
           try {
             // Komari serves its uploaded/theme icon at this public, same-site route.
@@ -147,17 +150,18 @@ export async function refresh(
             })
             if (
               response.ok &&
-              (response.expectedContentLength ?? 0) <= 131072
+              (response.expectedContentLength ?? 0) <= 2 * 1024 ** 2
             ) {
               const data = await response.data()
-              if (data.size <= 131072) {
+              if (data.size <= 2 * 1024 ** 2) {
                 const icon = UIImage.fromData(data)?.preparingThumbnail({
                   width: 64,
                   height: 64,
                 })
-                fresh.site.icon = icon?.toPNGBase64String() || undefined
+                const encoded = icon?.toPNGBase64String()
+                if (encoded) fresh.site.icon = encoded
               }
-            } else fresh.site.icon = undefined
+            }
           } catch {
             /* Keep the previous decoded icon during transient errors. */
           }

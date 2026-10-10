@@ -37,7 +37,7 @@ Komari VPS 监控：小、中、大号主屏幕组件显示选中的 VPS；打�
 - [设计预览](komari-monitor/assets/design-preview.png)：由 TSX 生成的浏览器近似，非 iOS 截图。
 - [验证记录](komari-monitor/VERIFICATION.md)
 
-默认展示明确标记的虚构演示数据。自动测试与核心类型检查通过；真实 iPhone／Scripting 和真实 Komari 服务器尚未验证。
+默认展示明确标记的虚构演示数据。自动测试与核心类型检查通过，已核对公开站点标题与图标文件；真实 iPhone／Scripting、真实 VPS 数据与持续更新尚未验证。
 
 ## 仓库约定
 
