@@ -321,3 +321,156 @@ test('loading logos in the background does not hold the list refresh lock', asyn
   await new Promise((resolve) => setImmediate(resolve))
   assert.ok(h.load('icons.ts').readLogo(c, sub(h, 'https://cdn.test/a')))
 })
+
+test('gradient CSS and dashed strokes from real upstream exports survive normalization without allowing external effects', () => {
+  const i = harness().load('icons.ts')
+  const result = i.safeSVG(
+    '<svg viewBox="0 0 24 24"><style>.start{stop-color:#3e82f4;stop-opacity:1}.line{stroke-dasharray:2 3;stroke-dashoffset:1}</style><defs><linearGradient id="g"><stop class="start"/><stop offset="1" style="stop-color:#93dcf7;stop-opacity:0"/></linearGradient></defs><path class="line" style="fill:url(#g);stroke-width:0" d="M0 0h24v24H0z"/></svg>',
+  )
+  assert.ok(result)
+  assert.match(result, /stop-color="#3e82f4"/)
+  assert.match(result, /stop-opacity="0"/)
+  assert.match(result, /stroke-dasharray="2 3"/)
+  assert.match(result, /fill="url\(#g\)"/)
+  assert.doesNotMatch(result, /style[=>]/)
+  for (const style of [
+    'filter:url(https://evil.test/f)',
+    'mask:url(//evil.test/m)',
+    'clip-path:url(data:image/svg+xml,a)',
+  ]) {
+    assert.equal(i.safeSVG(`<svg><path style="${style}"/></svg>`), null)
+  }
+})
+
+test('diagnostics distinguish HTTP, HTML, SVG, decoding and transport failures without revealing URLs or response text', async () => {
+  const cases = [
+    [async () => ({ ok: false, status: 403 }), /HTTP 403/],
+    [
+      async () => response('<html>private response</html>', 'text/html'),
+      /返回了网页/,
+    ],
+    [async () => response('<svg><script>secret</script></svg>'), /SVG/],
+    [async () => response('unrecognized', 'image/x-icon'), /无法解码/],
+    [
+      async () => {
+        throw Error('https://secret.test/?token=secret')
+      },
+      /网络、TLS 或超时/,
+    ],
+    [
+      async () => ({ ...response(), expectedContentLength: 3 * 1024 * 1024 }),
+      /超过/,
+    ],
+  ]
+  for (const [fetcher, expected] of cases) {
+    const h = harness({ config: c, fetcher }),
+      i = h.load('icons.ts')
+    const reports = await i.prepareLogos(
+      c,
+      [sub(h, 'https://cdn.test/icon?token=secret')],
+      auth,
+      true,
+    )
+    assert.equal(reports[0].ok, false)
+    assert.equal(reports[0].source, 'cdn.test')
+    assert.match(reports[0].message, expected)
+    assert.doesNotMatch(
+      JSON.stringify(reports),
+      /secret|private response|session-test/,
+    )
+  }
+  const h = harness({ config: c }),
+    i = h.load('icons.ts')
+  assert.match(
+    (await i.prepareLogos(c, [sub(h, '/api/app/assets/a')], null, true))[0]
+      .message,
+    /有效登录会话/,
+  )
+  assert.match(
+    (await i.prepareLogos(c, [sub(h, undefined)], auth, true))[0].message,
+    /未配置/,
+  )
+})
+
+test('explicit retry bypasses fresh caches, deduplicates URLs, increases timeout and preserves working icons after failure', async () => {
+  let requests = 0,
+    fail = false
+  const h = harness({
+    config: c,
+    fetcher: async (_, init) => {
+      requests++
+      assert.equal(init.timeout, requests === 1 ? 5 : 15)
+      if (fail) throw Error('offline')
+      return response()
+    },
+  })
+  const i = h.load('icons.ts'),
+    s = sub(h, 'https://cdn.test/a')
+  await i.prepareLogos(c, [s], auth)
+  fail = true
+  const reports = await i.prepareLogos(c, [s, { ...s, id: 'two' }], auth, true)
+  assert.equal(requests, 2)
+  assert.equal(reports.length, 2)
+  assert.ok(reports.every((r) => !r.ok && r.retained))
+  assert.equal(i.readLogo(c, s).svg, svg)
+})
+
+test('retry waiting for an old in-flight request cannot restart it after disconnect', async () => {
+  let release,
+    requests = 0
+  const h = harness({
+    config: c,
+    fetcher: () => {
+      requests++
+      return new Promise((resolve) => {
+        release = () => resolve(response())
+      })
+    },
+  })
+  const i = h.load('icons.ts'),
+    s = sub(h, '/api/app/assets/a')
+  const background = i.prepareLogos(c, [s], auth)
+  const retry = i.prepareLogos(c, [s], auth, true)
+  i.clearLogos()
+  release()
+  await Promise.all([background, retry])
+  assert.equal(requests, 1)
+  assert.equal(i.readLogo(c, s), null)
+  assert.equal(
+    [...h.data.keys()].some((k) => k.startsWith('renewlet.logo.')),
+    false,
+  )
+})
+
+test('diagnostics page retries cached subscriptions and requests widget reload with per-subscription results', async () => {
+  const h = harness({
+    config: c,
+    fetcher: async (url, init) => {
+      if (url.startsWith('https://cdn.test')) {
+        assert.equal(init.timeout, 15)
+        assert.equal(Object.keys(init.headers).length, 0)
+        return response()
+      }
+      throw Error('offline list')
+    },
+  })
+  h.load('state.ts').saveConnection(c, auth)
+  h.data.set('renewlet.snapshot.v1', {
+    revision: c.revision,
+    fetchedAt: '2026-10-01T00:00:00Z',
+    subscriptions: [sub(h, 'https://cdn.test/a?token=private-query')],
+  })
+  const page = h.renderComponent(h.load('icon-diagnostics.tsx').IconDiagnostics)
+  await walk(page.render())
+    .find((n) => n.type === 'Button')
+    .props.action()
+  const content = walk(page.render())
+    .filter((n) => n.type === 'Text')
+    .map((n) => n.children.join(''))
+    .join('\n')
+  assert.match(content, /SVG 已下载并通过检查/)
+  assert.match(content, /使用上次订阅快照/)
+  assert.match(content, /cdn.test/)
+  assert.doesNotMatch(content, /private-query|session-test/)
+  assert.equal(h.result.reloads, 2)
+})

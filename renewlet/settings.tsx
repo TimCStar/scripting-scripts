@@ -10,6 +10,7 @@ import {
   Dialog,
   Link,
   Navigation,
+  NavigationLink,
   useState,
   fetch,
 } from 'scripting'
@@ -36,6 +37,7 @@ import {
   type Credential,
 } from './client'
 import { palette } from './ui'
+import { IconDiagnostics } from './icon-diagnostics'
 export function Settings() {
   const [original] = useState(readConfig),
     [url, setURL] = useState(original.baseURL),
@@ -281,6 +283,9 @@ export function Settings() {
       </Section>
       {original.mode !== 'demo' ? (
         <Section header={<Text>当前已保存连接</Text>}>
+          <NavigationLink destination={<IconDiagnostics />}>
+            <Text>图标检查与重新加载</Text>
+          </NavigationLink>
           <Text font={12} foregroundStyle={palette.muted}>
             {original.baseURL}
           </Text>

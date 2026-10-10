@@ -5,10 +5,17 @@ import { demoIcon } from './demo-icons'
 import { openaiIcon } from './brand-icons'
 
 type Logo = { svg: string } | { image: UIImage }
+type LoadResult = { ok: boolean; message: string }
+export type LogoCheck = LoadResult & {
+  id: string
+  name: string
+  source: string
+  retained: boolean
+}
 const PREFIX = 'renewlet.logo.v1.',
   INDEX = PREFIX + 'index'
 const memory = new Map<string, Logo>(),
-  pending = new Map<string, Promise<void>>()
+  pending = new Map<string, Promise<LoadResult>>()
 const MAX_BYTES = 2 * 1024 * 1024,
   TTL = 7 * 86400000
 let generation = 0
@@ -45,7 +52,7 @@ export function safeSVG(input: string): string | null {
   // Entity-encoded URLs/attribute names cannot bypass reference checks.
   if (/&#|&(?!amp;|lt;|gt;|quot;|apos;)[A-Za-z]/i.test(input)) return null
   const allowed =
-    /^(?:fill|stroke|opacity|fill-opacity|stroke-opacity|stroke-width|fill-rule|clip-rule|stroke-linecap|stroke-linejoin|stroke-miterlimit)$/
+    /^(?:fill|stroke|opacity|fill-opacity|stroke-opacity|stroke-width|fill-rule|clip-rule|stroke-linecap|stroke-linejoin|stroke-miterlimit|stop-color|stop-opacity|stroke-dasharray|stroke-dashoffset|clip-path|mask|filter|color|color-interpolation|color-interpolation-filters|flood-color|flood-opacity)$/
   function declarations(css: string): string | null {
     let attrs = ''
     for (const part of css.split(';').filter((x) => x.trim())) {
@@ -210,22 +217,42 @@ function remember(k: string, logo: Logo) {
   }
   Storage.set(INDEX, next)
 }
-async function load(c: Config, s: Subscription, auth: Credential | null) {
-  if (!s.logo || c.mode === 'demo') return
+async function load(
+  c: Config,
+  s: Subscription,
+  auth: Credential | null,
+  force: boolean,
+): Promise<LoadResult> {
+  const start = generation
+  if (c.mode === 'demo') return { ok: true, message: '包内演示图标' }
+  if (!s.logo) return { ok: false, message: '未配置图标' }
   const k = key(c, s.logo),
     meta = Storage.get<{ time: number }>(k)
-  if (restore(c, s.logo) && meta && Date.now() - meta.time < TTL) return
-  if (pending.has(k)) return pending.get(k)
+  if (!force && restore(c, s.logo) && meta && Date.now() - meta.time < TTL)
+    return { ok: true, message: '已有本机缓存' }
+  if (pending.has(k)) {
+    if (!force) return pending.get(k)!
+    await pending.get(k)
+    if (generation !== start)
+      return { ok: false, message: '连接已改变，结果已丢弃' }
+  }
   const request = logoRequest(c, s.logo, auth)
-  if (!request) return
-  const start = generation
-  const job = (async () => {
+  if (!request)
+    return {
+      ok: false,
+      message: normalizeLogo(s.logo)
+        ? '私有图标需要有效登录会话'
+        : '图标地址不支持',
+    }
+  const job = (async (): Promise<LoadResult> => {
+    let redirectBlocked = false
+    let received = false
     try {
       let redirects = 0
       const response = await fetch(request.url, {
         method: 'GET',
         headers: request.headers,
-        timeout: 5,
+        timeout: force ? 15 : 5,
         allowInsecureRequest: request.url.startsWith('http:'),
         handleRedirect: async (redirect) => {
           if (
@@ -234,8 +261,10 @@ async function load(c: Config, s: Subscription, auth: Credential | null) {
             !normalizeLogo(redirect.url) ||
             (request.url.startsWith('https:') &&
               !redirect.url.startsWith('https:'))
-          )
+          ) {
+            redirectBlocked = true
             return null
+          }
           // Redirected external logos stay anonymous, including any supplied cookies.
           return {
             ...redirect,
@@ -246,10 +275,22 @@ async function load(c: Config, s: Subscription, auth: Credential | null) {
           }
         },
       })
-      if (!response.ok || (response.expectedContentLength ?? 0) > MAX_BYTES)
-        return
+      received = true
+      if (redirectBlocked && !response.ok)
+        return {
+          ok: false,
+          message: '重定向被拒绝（跨站私有图标、降级或跳转过多）',
+        }
+      if (!response.ok)
+        return {
+          ok: false,
+          message: `HTTP ${response.status}${[401, 403].includes(response.status) ? ' · 无权读取或被图床拒绝' : ''}`,
+        }
+      if ((response.expectedContentLength ?? 0) > MAX_BYTES)
+        return { ok: false, message: '图片超过 2 MiB' }
       const data = await response.data()
-      if (!data || data.size > MAX_BYTES) return
+      if (!data || !data.size) return { ok: false, message: '响应为空' }
+      if (data.size > MAX_BYTES) return { ok: false, message: '图片超过 2 MiB' }
       const mime = (response.mimeType || '').toLowerCase()
       let value: Logo | null = null
       const prefix =
@@ -257,7 +298,13 @@ async function load(c: Config, s: Subscription, auth: Credential | null) {
       if (mime.includes('svg') || /<svg[\s>]|<\?xml/i.test(prefix)) {
         const svg = safeSVG(data.toRawString() || '')
         if (svg) value = { svg }
+        else return { ok: false, message: 'SVG 含暂不支持的样式或外部内容' }
       } else {
+        if (
+          mime.includes('html') ||
+          /<!doctype\s+html|<html[\s>]/i.test(prefix)
+        )
+          return { ok: false, message: '返回了网页，可能是登录页或图床验证页' }
         const decoded = UIImage.fromData(data)
         const image =
           decoded?.preparingThumbnail({
@@ -265,34 +312,74 @@ async function load(c: Config, s: Subscription, auth: Credential | null) {
             height: 120,
           }) || decoded
         if (image) value = { image }
+        else
+          return { ok: false, message: '设备无法解码此图片，可改为 PNG / JPEG' }
       }
       if (value && generation === start) {
         memory.set(k, value)
         remember(k, value)
       }
+      return generation === start
+        ? {
+            ok: true,
+            message: 'svg' in value! ? 'SVG 已下载并通过检查' : '图片已解码',
+          }
+        : { ok: false, message: '连接已改变，结果已丢弃' }
     } catch {
-      /* A failed logo never hides the subscription or stops refresh. */
+      return {
+        ok: false,
+        message: redirectBlocked
+          ? '重定向被拒绝（跨站私有图标、降级或跳转过多）'
+          : received
+            ? '读取、解码或缓存失败'
+            : '请求未完成（网络、TLS 或超时）',
+      }
     }
   })()
   pending.set(k, job)
   try {
-    await job
+    return await job
   } finally {
-    pending.delete(k)
+    if (pending.get(k) === job) pending.delete(k)
   }
 }
 export async function prepareLogos(
   c: Config,
   list: Subscription[],
   auth: Credential | null,
-) {
-  const queue = [...list],
+  force = false,
+): Promise<LogoCheck[]> {
+  const queue = list.map((s, index) => ({ s, index })),
+    results: LogoCheck[] = [],
+    jobs = new Map<string, Promise<LoadResult>>(),
     start = generation
   // Four concurrent requests; widgets only pass the rows they actually display.
   await Promise.all(
     Array.from({ length: Math.min(4, queue.length) }, async () => {
-      while (queue.length && generation === start)
-        await load(c, queue.shift()!, auth)
+      while (queue.length && generation === start) {
+        const { s, index } = queue.shift()!
+        const identity = s.logo || s.id
+        if (!jobs.has(identity)) jobs.set(identity, load(c, s, auth, force))
+        const result = await jobs.get(identity)!
+        let source = '无图标地址'
+        if (s.logo) {
+          try {
+            source = new URL(
+              s.logo.startsWith('/') ? c.baseURL + s.logo : s.logo,
+            ).hostname
+          } catch {
+            source = '无效地址'
+          }
+        }
+        results[index] = {
+          ...result,
+          id: s.id,
+          name: s.name,
+          source,
+          retained: !result.ok && !!readLogo(c, s),
+        }
+      }
     }),
   )
+  return results.filter(Boolean)
 }
