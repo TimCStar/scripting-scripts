@@ -3,6 +3,7 @@ import {
   Section,
   Text,
   TextField,
+  SecureField,
   Picker,
   Button,
   Widget,
@@ -42,6 +43,7 @@ export function Settings() {
     [days, setDays] = useState(original.days),
     [zone, setZone] = useState(original.zone),
     [email, setEmail] = useState(''),
+    [password, setPassword] = useState(''),
     [message, setMessage] = useState(
       '凭证保存在本机钥匙串，密码只在本次登录使用。',
     ),
@@ -80,14 +82,11 @@ export function Settings() {
         secret = { mode: 'public', token: token.trim() }
       } else if (mode === 'session' && newLogin) {
         if (!email.trim()) throw new ClientError('请先填写登录邮箱')
-        const password = await Dialog.prompt({
-          title: '登录 Renewlet',
-          message: '密码只发送给上方填写的站点，不保存到本机。',
-          obscureText: true,
-        })
-        if (password === null) return
+        if (!password) throw new ClientError('请填写登录密码')
+        const submittedPassword = password
+        setPassword('')
         const cl = new RenewletClient(c.baseURL, null, fetch as Fetcher),
-          result = await cl.login(email, password)
+          result = await cl.login(email, submittedPassword)
         if (result.ticket) {
           const methods = result.methods?.filter((v) =>
             ['totp', 'recovery_code'].includes(v),
@@ -158,7 +157,11 @@ export function Settings() {
     }
   }
   return (
-    <Form navigationTitle="连接与组件" navigationBarTitleDisplayMode="inline">
+    <Form
+      navigationTitle="连接与组件"
+      navigationBarTitleDisplayMode="inline"
+      onDisappear={() => setPassword('')}
+    >
       <Section
         header={<Text>你的 Renewlet</Text>}
         footer={
@@ -172,7 +175,11 @@ export function Settings() {
         <Picker
           title="连接模式"
           value={mode}
-          onChanged={(v) => setMode(v as Mode)}
+          onChanged={(v) => {
+            setPassword('')
+            setMode(v as Mode)
+          }}
+          disabled={busy}
         >
           <Text tag="demo">演示账本</Text>
           <Text tag="public">Public API · 只读</Text>
@@ -183,14 +190,25 @@ export function Settings() {
           prompt="https://renewlet.example.com"
           value={url}
           onChanged={setURL}
+          disabled={busy}
         />
         {mode === 'session' ? (
-          <TextField
-            title="登录邮箱"
-            value={email}
-            onChanged={setEmail}
-            keyboardType="emailAddress"
-          />
+          <>
+            <TextField
+              title="登录邮箱"
+              value={email}
+              onChanged={setEmail}
+              keyboardType="emailAddress"
+              disabled={busy}
+            />
+            <SecureField
+              title="登录密码"
+              prompt="输入 Renewlet 密码"
+              value={password}
+              onChanged={setPassword}
+              disabled={busy}
+            />
+          </>
         ) : null}
         {mode !== 'demo' ? (
           <Button

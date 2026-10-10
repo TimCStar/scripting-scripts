@@ -101,6 +101,7 @@ function harness({
     'Toggle',
     'DatePicker',
     'TextField',
+    'SecureField',
     'Form',
     'NavigationLink',
     'NavigationStack',
