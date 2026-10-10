@@ -146,7 +146,7 @@ test('static SVG export styles become attributes, white artwork gets a dark plat
   )
   assert.ok(
     i.readLogo(c, { ...sub(h, 'https://blocked.test/a'), name: 'Chatgpt Team' })
-      .svg,
+      .image,
   )
 })
 
@@ -473,4 +473,123 @@ test('diagnostics page retries cached subscriptions and requests widget reload w
   assert.match(content, /cdn.test/)
   assert.doesNotMatch(content, /private-query|session-test/)
   assert.equal(h.result.reloads, 2)
+})
+
+test('binary images bypass strict text conversion and failures of optional text sniffing never block decode', async () => {
+  for (const mimeType of ['image/png', 'application/octet-stream']) {
+    const h = harness({
+      config: c,
+      fetcher: async () => ({
+        ok: true,
+        mimeType,
+        data: async () => ({
+          ...data('binary', true),
+          slice: () => {
+            throw Error('unsupported slice')
+          },
+          toRawString: () => {
+            throw Error('invalid UTF8')
+          },
+        }),
+      }),
+    })
+    const i = h.load('icons.ts'),
+      s = sub(h, 'https://cdn.test/a')
+    const [r] = await i.prepareLogos(c, [s], auth, true)
+    assert.equal(r.ok, true)
+    assert.ok(i.readLogo(c, s).image)
+  }
+})
+
+test('throwing, missing and null thumbnail methods keep the original decoded image', async () => {
+  for (const thumbnail of [
+    undefined,
+    () => null,
+    () => {
+      throw Error('native thumbnail error')
+    },
+  ]) {
+    const h = harness({
+      config: c,
+      fetcher: async () => response('binary', 'image/png'),
+    })
+    const original = {
+      preparingThumbnail: thumbnail,
+      toPNGData: () => data('png', true),
+    }
+    h.bridge.UIImage.fromData = () => original
+    const i = h.load('icons.ts'),
+      s = sub(h, 'https://cdn.test/a')
+    const [r] = await i.prepareLogos(c, [s], auth, true)
+    assert.equal(r.ok, true)
+    assert.equal(i.readLogo(c, s).image, original)
+  }
+})
+
+test('PNG encoding and cache failures preserve the in-memory image and explicitly report nonpersistent success', async () => {
+  for (const mode of ['null', 'throw', 'storage']) {
+    const h = harness({
+      config: c,
+      failStorage: mode === 'storage',
+      fetcher: async () => response('binary', 'image/png'),
+    })
+    const original = {
+      toPNGData: () => {
+        if (mode === 'throw') throw Error('encoding failure')
+        return mode === 'null' ? null : data('png', true)
+      },
+    }
+    h.bridge.UIImage.fromData = () => original
+    const i = h.load('icons.ts'),
+      s = sub(h, 'https://cdn.test/a')
+    const [r] = await i.prepareLogos(c, [s], auth, true)
+    assert.equal(r.ok, true)
+    assert.match(r.message, /仅本次可用（缓存未写入）/)
+    assert.equal(i.readLogo(c, s).image, original)
+  }
+})
+
+test('native read and decode exceptions have distinct redacted stages', async () => {
+  const h = harness({
+    config: c,
+    fetcher: async () => ({
+      ok: true,
+      data: async () => {
+        throw Error('secret-body')
+      },
+    }),
+  })
+  const i = h.load('icons.ts'),
+    s = sub(h, 'https://cdn.test/a')
+  let [r] = await i.prepareLogos(c, [s], auth, true)
+  assert.match(r.message, /Response.data/)
+  assert.doesNotMatch(r.message, /secret/)
+  h.bridge.fetch = async () => response('binary', 'image/png')
+  h.bridge.UIImage.fromData = () => {
+    throw Error('private-image')
+  }
+  ;[r] = await i.prepareLogos(c, [s], auth, true)
+  assert.match(r.message, /UIImage.fromData.*PNG/)
+  assert.doesNotMatch(r.message, /private-image/)
+})
+
+test('ChatGPT always uses the bundled dark PNG without external requests; transparent raster icons have contrast', async () => {
+  const h = harness({ config: c }),
+    i = h.load('icons.ts')
+  const s = { ...sub(h, 'https://cdn.test/white.png'), name: 'Chatgpt Team' }
+  const [r] = await i.prepareLogos(c, [s], auth, true)
+  assert.equal(r.ok, true)
+  assert.match(r.message, /PNG/)
+  assert.equal(r.source, '包内品牌图标')
+  assert.ok(i.readLogo(c, s).image)
+  assert.equal(i.logoBackground(i.readLogo(c, s)), '#FFFFFF')
+  assert.equal(i.logoBackground({ image: {} }), '#7D879E')
+  const node = walk(h.load('ui.tsx').SubscriptionIcon({ s })).find(
+    (n) => n.type === 'Image',
+  )
+  assert.match(node.props.image.source, /^data:image\/png;base64,/)
+  const png = Buffer.from(h.load('brand-raster.ts').openaiPNG, 'base64')
+  assert.equal(png.subarray(1, 4).toString(), 'PNG')
+  assert.equal(png.readUInt32BE(16), 120)
+  assert.equal(png.readUInt32BE(20), 120)
 })

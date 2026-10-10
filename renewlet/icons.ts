@@ -3,8 +3,9 @@ import { normalizeLogo, type Config, type Subscription } from './model'
 import { type Credential } from './client'
 import { demoIcon } from './demo-icons'
 import { openaiIcon } from './brand-icons'
+import { openaiPNG } from './brand-raster'
 
-type Logo = { svg: string } | { image: UIImage }
+type Logo = { svg: string } | { image: UIImage; background?: string }
 type LoadResult = { ok: boolean; message: string }
 export type LogoCheck = LoadResult & {
   id: string
@@ -19,6 +20,26 @@ const memory = new Map<string, Logo>(),
 const MAX_BYTES = 2 * 1024 * 1024,
   TTL = 7 * 86400000
 let generation = 0
+let openaiImage: UIImage | null = null
+function isOpenAI(s: Subscription) {
+  return /chat\s*gpt|openai/i.test(s.name)
+}
+function brandLogo(): Logo {
+  try {
+    openaiImage ||= UIImage.fromBase64String(openaiPNG)
+  } catch {}
+  return openaiImage
+    ? { image: openaiImage, background: '#FFFFFF' }
+    : { svg: openaiIcon.replace('<svg ', '<svg width="120" height="120" ') }
+}
+// Optional text detection must never prevent a binary image from being decoded.
+function imageText(data: Data): string {
+  try {
+    return data.toRawString() || ''
+  } catch {
+    return ''
+  }
+}
 function key(c: Config, logo: string) {
   return (
     PREFIX +
@@ -181,12 +202,13 @@ export function readLogo(c: Config, s: Subscription): Logo | null {
     const svg = demoIcon(s.id)
     return svg ? { svg } : null
   }
-  return (
-    (s.logo ? restore(c, s.logo) : null) ||
-    (/chat\s*gpt|openai/i.test(s.name) ? { svg: openaiIcon } : null)
-  )
+  // A known dark PNG avoids white-on-white variants and device SVG differences.
+  if (isOpenAI(s)) return brandLogo()
+  return s.logo ? restore(c, s.logo) : null
 }
 export function logoBackground(logo: Logo): string {
+  // Mid-tone backing keeps both white and dark transparent raster artwork visible.
+  if ('image' in logo) return logo.background || '#7D879E'
   return 'svg' in logo &&
     /(?:fill|stroke)\s*=\s*["'](?:white|#fff(?:fff)?|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\))["']/i.test(
       logo.svg,
@@ -199,7 +221,7 @@ export function clearLogos() {
   memory.clear()
   for (const k of Storage.keys()) if (k.startsWith(PREFIX)) Storage.remove(k)
 }
-function remember(k: string, logo: Logo) {
+function remember(k: string, logo: Logo): boolean {
   const entries = Storage.get<string[]>(INDEX) || []
   const next = [...entries.filter((x) => x !== k), k]
   while (next.length > 80) {
@@ -208,14 +230,15 @@ function remember(k: string, logo: Logo) {
     Storage.remove(old + '.data')
     memory.delete(old)
   }
-  if ('svg' in logo) Storage.set(k, { time: Date.now(), svg: logo.svg })
-  else {
+  if ('svg' in logo) {
+    if (!Storage.set(k, { time: Date.now(), svg: logo.svg })) return false
+  } else {
     const data = logo.image.toPNGData()
-    if (!data) return
+    if (!data) return false
     Storage.setData(k + '.data', data)
-    Storage.set(k, { time: Date.now() })
+    if (!Storage.set(k, { time: Date.now() })) return false
   }
-  Storage.set(INDEX, next)
+  return Storage.set(INDEX, next)
 }
 async function load(
   c: Config,
@@ -225,6 +248,14 @@ async function load(
 ): Promise<LoadResult> {
   const start = generation
   if (c.mode === 'demo') return { ok: true, message: '包内演示图标' }
+  if (isOpenAI(s))
+    return {
+      ok: true,
+      message:
+        'image' in brandLogo()
+          ? '使用包内 ChatGPT / OpenAI 图标（PNG）'
+          : '使用包内 ChatGPT / OpenAI 图标（SVG 备用）',
+    }
   if (!s.logo) return { ok: false, message: '未配置图标' }
   const k = key(c, s.logo),
     meta = Storage.get<{ time: number }>(k)
@@ -246,7 +277,8 @@ async function load(
     }
   const job = (async (): Promise<LoadResult> => {
     let redirectBlocked = false
-    let received = false
+    let stage = '请求未完成（网络、TLS 或超时）'
+    let format = ''
     try {
       let redirects = 0
       const response = await fetch(request.url, {
@@ -275,7 +307,7 @@ async function load(
           }
         },
       })
-      received = true
+      stage = '读取响应信息失败'
       if (redirectBlocked && !response.ok)
         return {
           ok: false,
@@ -288,36 +320,66 @@ async function load(
         }
       if ((response.expectedContentLength ?? 0) > MAX_BYTES)
         return { ok: false, message: '图片超过 2 MiB' }
+      stage = '读取图片数据失败（Response.data）'
       const data = await response.data()
       if (!data || !data.size) return { ok: false, message: '响应为空' }
       if (data.size > MAX_BYTES) return { ok: false, message: '图片超过 2 MiB' }
       const mime = (response.mimeType || '').toLowerCase()
+      format =
+        (
+          {
+            'image/png': 'PNG',
+            'image/jpeg': 'JPEG',
+            'image/webp': 'WebP',
+            'image/gif': 'GIF',
+            'image/x-icon': 'ICO',
+            'image/vnd.microsoft.icon': 'ICO',
+            'image/svg+xml': 'SVG',
+          } as Record<string, string>
+        )[mime] || ''
       let value: Logo | null = null
-      const prefix =
-        data.slice(0, Math.min(4096, data.size)).toRawString() || ''
-      if (mime.includes('svg') || /<svg[\s>]|<\?xml/i.test(prefix)) {
-        const svg = safeSVG(data.toRawString() || '')
+      // Known raster types bypass text conversion entirely; no Data.slice bridge call.
+      const text =
+        mime.startsWith('image/') && !mime.includes('svg') && format
+          ? ''
+          : imageText(data)
+      if (
+        mime.includes('svg') ||
+        /<svg[\s>]|<\?xml/i.test(text.slice(0, 4096))
+      ) {
+        stage = '处理 SVG 失败'
+        const svg = safeSVG(text)
         if (svg) value = { svg }
         else return { ok: false, message: 'SVG 含暂不支持的样式或外部内容' }
       } else {
         if (
           mime.includes('html') ||
-          /<!doctype\s+html|<html[\s>]/i.test(prefix)
+          /<!doctype\s+html|<html[\s>]/i.test(text.slice(0, 4096))
         )
           return { ok: false, message: '返回了网页，可能是登录页或图床验证页' }
+        stage = '图片解码调用失败（UIImage.fromData）'
         const decoded = UIImage.fromData(data)
-        const image =
-          decoded?.preparingThumbnail({
-            width: 120,
-            height: 120,
-          }) || decoded
+        let image = decoded
+        if (decoded) {
+          try {
+            image =
+              decoded.preparingThumbnail({ width: 120, height: 120 }) || decoded
+          } catch {
+            // A missing/throwing thumbnail API must not discard the decoded original.
+          }
+        }
         if (image) value = { image }
         else
           return { ok: false, message: '设备无法解码此图片，可改为 PNG / JPEG' }
       }
       if (value && generation === start) {
         memory.set(k, value)
-        remember(k, value)
+        let saved = false
+        try {
+          saved = remember(k, value)
+        } catch {}
+        if (!saved)
+          return { ok: true, message: '图标已加载，仅本次可用（缓存未写入）' }
       }
       return generation === start
         ? {
@@ -330,9 +392,7 @@ async function load(
         ok: false,
         message: redirectBlocked
           ? '重定向被拒绝（跨站私有图标、降级或跳转过多）'
-          : received
-            ? '读取、解码或缓存失败'
-            : '请求未完成（网络、TLS 或超时）',
+          : stage + (format ? ` · ${format}` : ''),
       }
     }
   })()
@@ -358,11 +418,12 @@ export async function prepareLogos(
     Array.from({ length: Math.min(4, queue.length) }, async () => {
       while (queue.length && generation === start) {
         const { s, index } = queue.shift()!
-        const identity = s.logo || s.id
+        const identity = isOpenAI(s) ? 'builtin:openai' : s.logo || s.id
         if (!jobs.has(identity)) jobs.set(identity, load(c, s, auth, force))
         const result = await jobs.get(identity)!
         let source = '无图标地址'
-        if (s.logo) {
+        if (isOpenAI(s)) source = '包内品牌图标'
+        else if (s.logo) {
           try {
             source = new URL(
               s.logo.startsWith('/') ? c.baseURL + s.logo : s.logo,

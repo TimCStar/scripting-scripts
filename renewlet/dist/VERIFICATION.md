@@ -1,8 +1,12 @@
 # 验证记录
 
-日期：2026-10-11（Asia/Shanghai），脚本 1.2.3。Node 24.14.0，TypeScript 5.9.3，fflate 0.8.3。
+日期：2026-10-11（Asia/Shanghai），脚本 1.2.4。Node 24.14.0，TypeScript 5.9.3，fflate 0.8.3。
 
 ## 已验证
+
+- 1.2.4：49 项测试通过。新增二进制文本探测抛错仍可解码、缩略图方法缺失／抛错／返回 null 仍保留原图、PNG 编码或 Storage 失败不隐藏当前图片、数据读取与原生解码异常分阶段且不泄露异常正文、ChatGPT 离线 PNG 不发网络请求及尺寸检查。故障通过模拟桥注入验证，尚不能据此认定用户家宽拼车和拼多多的具体失败阶段。
+- ChatGPT / OpenAI 改用构建时从原有 CC0 SVG 生成的 120×120 PNG。检查生成图片为完整深色标识和白底；iOS 只使用内嵌 Base64，不依赖 Node 或 resvg。原生 `UIImage.fromBase64String`、`Data.toRawString` 与缩略图 API 已对照官方文档；没有接入设备，未声称真机验证完成。
+- 旧版在 `preparingThumbnail()` 抛错或方法不可用时会直接结束整个图标任务，虽已有可解码原图也不会保存或显示；本次隔离这个可复现的失败路径。位图底色改为灰蓝色，避免透明白色图形与白色底板混在一起。之前一次 SVG 抽样成功不能证明用户实际图片可解码。
 
 - 1.2.3：44 项自动测试通过、16 个运行时文件语法检查及核心严格类型检查通过。新增渐变停止点／虚线描边回归、诊断分类及脱敏、手动绕过缓存并保留可用图标、等待旧请求时断开连接防回填、诊断页面结果及组件重载测试。仅模拟原生 API，未验证 iOS 编解码器。
 - 真实公开图标抽样：按上游 0.3.30 的图标目录和默认 `testingcf.jsdelivr.net` CDN，读取 TheSVG、selfh.st、Dashboard Icons 的 GitHub／iCloud／Netflix／Notion／OpenAI／Spotify／Trakt／YouTube／ChatGPT 共 26 个可用首选 SVG 版本。26 次 HTTP 200；旧版 `safeSVG` 通过 21 个，拒绝 TheSVG Netflix、selfh.st iCloud／Trakt、Dashboard Icons iCloud／Netflix，原因是 `stop-color`、`stop-opacity`、`stroke-dasharray` 等常规静态 CSS 未列入支持范围。修复后重新下载，26 个均通过。这是桌面网络与解析验证，不是用户图标配置或真机渲染验证。

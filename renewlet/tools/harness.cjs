@@ -70,6 +70,12 @@ function harness({
         throw Error('Unexpected network')
       }),
     UIImage: {
+      fromBase64String: (base64) =>
+        bridge.UIImage.fromData({
+          raster: true,
+          size: Buffer.from(base64, 'base64').length,
+          toBase64String: () => base64,
+        }),
       fromData: (data) =>
         data?.raster
           ? {
