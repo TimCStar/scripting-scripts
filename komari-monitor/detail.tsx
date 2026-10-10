@@ -7,6 +7,7 @@ import {
   Picker,
   Button,
   NavigationLink,
+  Navigation,
   useState,
   useEffect,
 } from 'scripting'
@@ -19,8 +20,11 @@ import {
   timeLabel,
   traffic,
   ratio,
+  latency,
+  lossLabel,
   type Node,
   type Sample,
+  type ProbeHistory,
 } from './model'
 import {
   palette,
@@ -29,8 +33,10 @@ import {
   Resource,
   Trend,
   UpdateNote,
+  TrafficMeter,
+  ProbeReading,
 } from './ui'
-import { loadHistory } from './state'
+import { loadHistory, loadProbes } from './state'
 import { errorMessage } from './client'
 import { useMonitor } from './monitor'
 function Fact({ title, value }: { title: string; value: string }) {
@@ -51,10 +57,14 @@ function Fact({ title, value }: { title: string; value: string }) {
 }
 export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
   const m = useMonitor(),
+    dismiss = Navigation.useDismiss(),
     n = m.snapshot.nodes.find((n) => n.id === id),
     [hours, setHours] = useState(1),
-    [metric, setMetric] = useState<'cpu' | 'memory' | 'disk'>('cpu'),
+    [metric, setMetric] = useState<'cpu' | 'memory' | 'disk' | 'up' | 'down'>(
+      'cpu',
+    ),
     [history, setHistory] = useState<Sample[]>(n?.history || []),
+    [probes, setProbes] = useState<ProbeHistory[]>([]),
     [historyNote, setHistoryNote] = useState(''),
     [chartBusy, setChartBusy] = useState(false)
   const [control] = useState(() => ({ epoch: 0, active: false }))
@@ -64,9 +74,15 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
     setChartBusy(true)
     setHistoryNote('')
     try {
-      const result = await loadHistory(m.config, n, hours, m.snapshot.transport)
+      const [historyResult, probeResult] = await Promise.allSettled([
+        loadHistory(m.config, n, hours, m.snapshot.transport),
+        loadProbes(m.config, n, hours, m.snapshot.transport),
+      ])
+      const result =
+        historyResult.status === 'fulfilled' ? historyResult.value : []
       if (control.active && epoch === control.epoch) {
         setHistory(result)
+        setProbes(probeResult.status === 'fulfilled' ? probeResult.value : [])
         setHistoryNote(
           result.length ? '' : '服务器未提供历史记录（可能未启用记录）',
         )
@@ -82,11 +98,17 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
   }
   useEffect(() => {
     if (control.active) void chart()
-  }, [hours, n?.id, m.config.revision])
+  }, [
+    hours,
+    n?.id,
+    m.config.revision,
+    Math.floor(Date.parse(m.snapshot.fetchedAt) / 60_000),
+  ])
   const s = n?.status,
     amount = n ? traffic(n) : null
   return (
     <List
+      listStyle="insetGroup"
       navigationTitle={n?.name || 'VPS 详情'}
       navigationBarTitleDisplayMode="inline"
       onAppear={() => {
@@ -104,6 +126,9 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
         await chart()
       }}
       toolbar={{
+        cancellationAction: home ? (
+          <Button title="完成" action={dismiss} />
+        ) : undefined,
         topBarTrailing: (
           <Button
             title={m.busy ? '更新中' : '刷新'}
@@ -138,6 +163,11 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
                 >{`${n.region} / ${n.group}`}</Text>
                 <StatusBadge node={n} cached={m.snapshot.cached} />
               </HStack>
+              <Text font={10} foregroundStyle={palette.teal}>
+                {m.liveNote}
+              </Text>
+              <ProbeReading node={n} />
+              <TrafficMeter node={n} />
               <HStack spacing={16}>
                 <Reading
                   title="CPU 使用率"
@@ -157,6 +187,91 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
                 {m.snapshot.notice}
               </Text>
             ) : null}
+          </Section>
+          <Section header={<Text>网络流动</Text>}>
+            <HStack spacing={16}>
+              <Reading title="↓ 下载" value={speed(s?.down ?? null)} />
+              <Reading title="↑ 上传" value={speed(s?.up ?? null)} accent />
+            </HStack>
+            <Fact
+              title="累计下载 / 上传"
+              value={`${bytes(s?.totalDown ?? null)} / ${bytes(s?.totalUp ?? null)}`}
+            />
+            <Text font={11} foregroundStyle={palette.muted}>
+              流量额度按 Agent
+              累计上报值和站点计量方式计算；重置行为以服务器配置为准。
+            </Text>
+          </Section>
+          <Section header={<Text>网络探测 · 最近一小时汇总</Text>}>
+            {s?.ping.length ? (
+              s.ping.map((p, i) => (
+                <VStack key={String(i)} alignment="leading" spacing={5}>
+                  <Text
+                    font={14}
+                    fontWeight="semibold"
+                    foregroundStyle={palette.ink}
+                  >
+                    {p.name}
+                  </Text>
+                  <Text
+                    font={12}
+                    foregroundStyle={palette.muted}
+                  >{`最近有效 ${latency(p.latest)} · 平均 ${latency(p.avg)} · 丢包 ${lossLabel(p.loss)}`}</Text>
+                </VStack>
+              ))
+            ) : (
+              <Text font={12} foregroundStyle={palette.muted}>
+                暂无可用探测数据，请在 Komari 后台配置 Ping / TCP / HTTP 任务。
+              </Text>
+            )}
+          </Section>
+          <Section header={<Text>延迟轨迹 · 最近 {hours} 小时</Text>}>
+            {probes.length ? (
+              probes.map((p, i) => (
+                <VStack key={String(i)} alignment="leading" spacing={8}>
+                  <Text
+                    font={14}
+                    fontWeight="semibold"
+                    foregroundStyle={palette.ink}
+                  >
+                    {p.name}
+                  </Text>
+                  <HStack>
+                    <Reading title="平均延迟" value={latency(p.avg)} />
+                    <Reading
+                      title="窗口丢包率"
+                      value={lossLabel(p.loss)}
+                      accent
+                    />
+                  </HStack>
+                  <Trend
+                    ceiling={1}
+                    height={70}
+                    muted={m.snapshot.cached}
+                    history={p.points.map((point) => ({
+                      time: point.time,
+                      cpu: point.value,
+                      memory: null,
+                      disk: null,
+                      up: null,
+                      down: null,
+                    }))}
+                  />
+                  <Text font={10} foregroundStyle={palette.muted}>
+                    纵轴 ms · 断点为失败或缺失 · 峰值{' '}
+                    {latency(
+                      p.points.some((point) => point.value !== null)
+                        ? Math.max(...p.points.map((point) => point.value ?? 0))
+                        : null,
+                    )}
+                  </Text>
+                </VStack>
+              ))
+            ) : (
+              <Text font={11} foregroundStyle={palette.muted}>
+                {chartBusy ? '正在读取探测记录…' : '暂无可用探测历史'}
+              </Text>
+            )}
           </Section>
           <Section header={<Text>资源水位</Text>}>
             <Resource
@@ -189,7 +304,7 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
               value={`${s?.process ?? '—'} / ${s?.tcp ?? '—'} / ${s?.udp ?? '—'}`}
             />
           </Section>
-          <Section header={<Text>负载轨迹</Text>}>
+          <Section header={<Text>资源与网络轨迹</Text>}>
             <Picker
               title="时间窗口"
               value={hours}
@@ -206,7 +321,11 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
               title="指标"
               value={metric}
               onChanged={(value) => {
-                if (['cpu', 'memory', 'disk'].includes(String(value)))
+                if (
+                  ['cpu', 'memory', 'disk', 'up', 'down'].includes(
+                    String(value),
+                  )
+                )
                   setMetric(value as typeof metric)
               }}
               pickerStyle="segmented"
@@ -214,6 +333,8 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
               <Text tag="cpu">CPU</Text>
               <Text tag="memory">内存</Text>
               <Text tag="disk">磁盘</Text>
+              <Text tag="down">下载</Text>
+              <Text tag="up">上传</Text>
             </Picker>
             <Trend
               history={history}
@@ -225,7 +346,7 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
               {chartBusy
                 ? '正在读取历史…'
                 : historyNote ||
-                  `${m.config.demo ? '演示曲线' : `最近 ${hours} 小时`} · ${history.length} 个采样 · 纵轴百分比`}
+                  `${m.config.demo ? '演示曲线' : `最近 ${hours} 小时`} · ${history.length} 个采样 · ${metric === 'up' || metric === 'down' ? '纵轴 B/s' : '纵轴百分比'}`}
             </Text>
             {history.length ? (
               <Fact
@@ -233,54 +354,6 @@ export function Detail({ id, home }: { id: string; home?: () => JSX.Element }) {
                 value={`${timeLabel(history[0].time)} – ${timeLabel(history.at(-1)!.time)}`}
               />
             ) : null}
-          </Section>
-          <Section header={<Text>网络流动</Text>}>
-            <HStack spacing={16}>
-              <Reading title="↓ 下载" value={speed(s?.down ?? null)} />
-              <Reading title="↑ 上传" value={speed(s?.up ?? null)} accent />
-            </HStack>
-            <Fact
-              title="累计下载 / 上传"
-              value={`${bytes(s?.totalDown ?? null)} / ${bytes(s?.totalUp ?? null)}`}
-            />
-            {n.trafficLimit !== null && n.trafficLimit > 0 ? (
-              <Resource
-                label={`周期流量 · ${n.trafficType}`}
-                value={ratio(amount, n.trafficLimit)}
-                detail={`${bytes(amount)} / ${bytes(n.trafficLimit)}`}
-                large
-              />
-            ) : null}
-            {amount === null &&
-            n.trafficLimit !== null &&
-            n.trafficLimit > 0 ? (
-              <Text font={11} foregroundStyle={palette.muted}>
-                接口未提供周期计费流量，不能用累计流量代替。
-              </Text>
-            ) : null}
-          </Section>
-          <Section header={<Text>网络探测 · 最近一小时汇总</Text>}>
-            {s?.ping.length ? (
-              s.ping.map((p, i) => (
-                <VStack key={String(i)} alignment="leading" spacing={5}>
-                  <Text
-                    font={14}
-                    fontWeight="semibold"
-                    foregroundStyle={palette.ink}
-                  >
-                    {p.name}
-                  </Text>
-                  <Text
-                    font={12}
-                    foregroundStyle={palette.muted}
-                  >{`最近 ${p.latest === null ? '无有效读数' : p.latest + ' ms'} · 平均 ${p.avg ?? '—'} ms · 丢包 ${p.loss ?? '—'}%`}</Text>
-                </VStack>
-              ))
-            ) : (
-              <Text font={12} foregroundStyle={palette.muted}>
-                暂无探测任务汇总；旧版 REST 不提供此字段。
-              </Text>
-            )}
           </Section>
           <Section header={<Text>机器档案</Text>}>
             <Fact title="CPU" value={`${n.cpuName} · ${n.cores ?? '—'} 核`} />

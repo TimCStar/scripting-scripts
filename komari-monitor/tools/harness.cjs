@@ -64,6 +64,7 @@ function harness({
       useDismiss: () => () => {},
       present: async (v) => {
         result.page = v.element
+        result.presentation = v.modalPresentationStyle
       },
     },
     useState: (x) => [typeof x === 'function' ? x() : x, () => {}],
@@ -92,6 +93,21 @@ function harness({
   ])
     bridge[n] = n
   const globals = {
+    UIImage: { fromBase64String: () => null, fromData: () => null },
+    AppEvents: {
+      scenePhase: {
+        listeners: new Set(),
+        addListener(fn) {
+          this.listeners.add(fn)
+        },
+        removeListener(fn) {
+          this.listeners.delete(fn)
+        },
+        emit(phase) {
+          for (const fn of this.listeners) fn(phase)
+        },
+      },
+    },
     jsx,
     Fragment: 'Fragment',
     Date,

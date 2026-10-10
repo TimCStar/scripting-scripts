@@ -18,6 +18,7 @@ function fetcher(h, { fail = false, change = false } = {}) {
   h.bridge.fetch = async (url, init) => {
     count++
     if (fail) throw Error('network failed fixture token')
+    if (!init.body) return { ok: false, status: 404 }
     const r = JSON.parse(init.body)
     if (change)
       h.data.set('komari.config.v1', {
@@ -35,7 +36,9 @@ function fetcher(h, { fail = false, change = false } = {}) {
             ? { n1: { uuid: 'n1', name: 'Fresh' } }
             : r.method === 'common:getNodesLatestStatus'
               ? { n1: { cpu: 0, online: true, time: new Date().toISOString() } }
-              : { records: [] },
+              : r.method === 'common:getPublicInfo'
+                ? { sitename: '星海监控' }
+                : { records: [] },
       }),
     }
   }
@@ -57,7 +60,7 @@ test('failure keeps original sampling time and greys out cached online status', 
   const { h, s, c, m } = setup()
   const count = fetcher(h)
   const fresh = await s.refresh(c)
-  a.equal(count(), 2)
+  a.equal(count(), 4)
   a.equal(fresh.nodes[0].status.cpu, 0)
   fetcher(h, { fail: true })
   const old = await s.refresh(c)
@@ -88,7 +91,7 @@ test('same-host duplicate refresh shares one request sequence', async () => {
   const { h, s, c } = setup()
   const count = fetcher(h)
   const results = await Promise.all([s.refresh(c), s.refresh(c)])
-  a.equal(count(), 2)
+  a.equal(count(), 4)
   a.equal(results[0].fetchedAt, results[1].fetchedAt)
 })
 test('invalid widget parameter makes no network request', async () => {
@@ -110,17 +113,15 @@ test('storage failure preserves visible successful response and reports limitati
 test('App Intent ignores stale revision and otherwise refreshes before reloading widgets', async () => {
   const { h, c } = setup()
   const count = fetcher(h),
-    intent = h
-      .load('app_intents.tsx')
-      .RefreshKomariIntent({
-        family: 'systemSmall',
-        parameter: 'n1',
-        revision: 'r0',
-      })
+    intent = h.load('app_intents.tsx').RefreshKomariIntent({
+      family: 'systemSmall',
+      parameter: 'n1',
+      revision: 'r0',
+    })
   await intent.definition.perform(intent.params)
   a.equal(count(), 0)
   await intent.definition.perform({ ...intent.params, revision: c.revision })
-  a.equal(count(), 3)
+  a.equal(count(), 5)
   a.equal(h.result.reloads, 1)
 })
 for (const family of ['systemSmall', 'systemMedium', 'systemLarge'])
@@ -180,6 +181,7 @@ test('main entry opens all VPS and detail deep link keeps path back to fleet', a
   h.load('index.tsx')
   await h.globals.completion
   a.equal(h.result.exited, true)
+  a.equal(h.result.presentation, 'fullScreen')
   a.ok(
     walk(h.result.page).some(
       (n) => n.type === 'Text' && n.children.join('') === '全部节点',
@@ -211,10 +213,138 @@ test('page polling schedules once and leaving prevents further requests', async 
     monitor = h.load('monitor.tsx').useMonitor()
   monitor.appear()
   await new Promise((resolve) => setImmediate(resolve))
-  a.equal(count(), 2)
+  a.equal(count(), 4)
   a.equal(typeof timer, 'function')
   monitor.disappear()
   a.equal(cleared, true)
   await timer()
-  a.equal(count(), 2)
+  a.equal(count(), 4)
+})
+
+test('fast foreground updates use 3 seconds, only fetch statuses and stop while backgrounded', async () => {
+  const { h } = setup(),
+    delays = []
+  let timer
+  h.globals.setTimeout = (fn, ms) => {
+    timer = fn
+    delays.push(ms)
+    return 1
+  }
+  h.globals.clearTimeout = () => {}
+  const count = fetcher(h),
+    monitor = h.load('monitor.tsx').useMonitor()
+  monitor.appear()
+  await new Promise((resolve) => setImmediate(resolve))
+  a.equal(count(), 4)
+  a.equal(delays.at(-1), 3000)
+  await timer()
+  a.equal(count(), 5)
+  h.globals.AppEvents.scenePhase.emit('background')
+  await timer()
+  a.equal(count(), 5)
+  h.globals.AppEvents.scenePhase.emit('active')
+  await new Promise((resolve) => setImmediate(resolve))
+  a.equal(count(), 6)
+  monitor.disappear()
+  a.equal(h.globals.AppEvents.scenePhase.listeners.size, 0)
+})
+test('automatic retry backs off during failure and recovers its interval after success', async () => {
+  const { h } = setup(),
+    delays = []
+  let timer
+  h.globals.setTimeout = (fn, ms) => {
+    timer = fn
+    delays.push(ms)
+    return 1
+  }
+  h.globals.clearTimeout = () => {}
+  fetcher(h, { fail: true })
+  const monitor = h.load('monitor.tsx').useMonitor()
+  monitor.appear()
+  await new Promise((resolve) => setImmediate(resolve))
+  a.equal(delays.at(-1), 6000)
+  await timer()
+  a.equal(delays.at(-1), 12000)
+  fetcher(h)
+  await timer()
+  a.equal(delays.at(-1), 3000)
+  monitor.disappear()
+})
+test('site title, cached favicon and compact traffic/probe readings appear in each widget', async () => {
+  for (const family of ['systemSmall', 'systemMedium', 'systemLarge']) {
+    const h = harness({ family }),
+      m = h.load('model.ts'),
+      snapshot = m.demoSnapshot()
+    snapshot.site = { title: '星海监控', icon: 'fixture-image' }
+    h.globals.UIImage.fromBase64String = (value) =>
+      value === 'fixture-image' ? { decoded: true } : null
+    h.load('widget.tsx')
+    await h.globals.completion
+    const view = h
+      .load('widget.tsx')
+      .WidgetView({ snapshot, family, ids: ['demo-1'] })
+    const tree = walk(view),
+      labels = tree
+        .filter((n) => n.type === 'Text')
+        .map((n) => n.children.join(''))
+        .join('|')
+    a.match(labels, /星海监控/)
+    a.match(labels, /流量/)
+    a.match(labels, /延迟/)
+    a.match(labels, /丢包/)
+    a.ok(tree.some((n) => n.type === 'Image' && n.props.image?.decoded))
+  }
+})
+test('favicon decoding is cached, never receives Authorization and is not fetched every status tick', async () => {
+  const { h, s, c } = setup(),
+    calls = []
+  fetcher(h)
+  const original = h.bridge.fetch
+  h.globals.UIImage.fromData = () => ({
+    preparingThumbnail: () => ({ toPNGBase64String: () => 'encoded-fixture' }),
+  })
+  h.bridge.fetch = async (url, init) => {
+    calls.push({ url, init })
+    if (url.endsWith('/favicon.ico'))
+      return {
+        ok: true,
+        expectedContentLength: 20,
+        data: async () => ({ size: 20 }),
+      }
+    return original(url, init)
+  }
+  const first = await s.refresh(c)
+  a.equal(first.site.title, '星海监控')
+  a.equal(first.site.icon, 'encoded-fixture')
+  a.equal(
+    calls.find((x) => x.url.endsWith('/favicon.ico')).init.headers,
+    undefined,
+  )
+  await s.refresh(c, undefined, '', true)
+  await s.refresh(c)
+  a.equal(calls.filter((x) => x.url.endsWith('/favicon.ico')).length, 1)
+  a.equal(s.readCache(c).site.icon, 'encoded-fixture')
+})
+
+test('rerendered page removes the original scene listener rather than its new closure', async () => {
+  const { h } = setup()
+  h.globals.setTimeout = () => 1
+  h.globals.clearTimeout = () => {}
+  let retained
+  h.bridge.useState = (initial) => {
+    let value = typeof initial === 'function' ? initial() : initial
+    if (value && typeof value === 'object' && 'visible' in value) {
+      if (!retained) retained = value
+      value = retained
+    }
+    return [value, () => {}]
+  }
+  fetcher(h)
+  const useMonitor = h.load('monitor.tsx').useMonitor,
+    first = useMonitor()
+  first.appear()
+  await new Promise((resolve) => setImmediate(resolve))
+  const rerender = useMonitor()
+  rerender.disappear()
+  a.equal(h.globals.AppEvents.scenePhase.listeners.size, 0)
 })

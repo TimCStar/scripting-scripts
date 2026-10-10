@@ -4,6 +4,10 @@ import {
   normalizeNodes,
   normalizeStatus,
   normalizeHistory,
+  normalizePingRecords,
+  normalizeProbeHistory,
+  sample,
+  text,
   type Config,
   type Snapshot,
   type Sample,
@@ -101,6 +105,22 @@ export class KomariClient {
       this.mode = 'rest'
       nodes = normalizeNodes(await this.rest('/api/nodes'))
     }
+    return this.update(
+      { nodes, fetchedAt: '', transport: this.mode },
+      ids,
+      true,
+    )
+  }
+  async update(
+    previous: Snapshot,
+    ids?: string[],
+    full = false,
+  ): Promise<Snapshot> {
+    let nodes: Snapshot['nodes'] = previous.nodes.map((n) => ({
+      ...n,
+      error: undefined,
+    }))
+    this.mode = previous.transport === 'rest' ? 'rest' : 'rpc'
     // Widgets request state only for their configured UUIDs; the app requests all.
     const targets = ids ? nodes.filter((n) => ids.includes(n.id)) : nodes
     if (this.mode === 'rpc') {
@@ -111,8 +131,16 @@ export class KomariClient {
             ids ? { uuids: targets.map((n) => n.id) } : {},
           ),
         )
-        for (const n of targets)
-          if (statuses[n.id]) n.status = normalizeStatus(statuses[n.id])
+        for (const n of targets) {
+          n.status = statuses[n.id] ? normalizeStatus(statuses[n.id]) : null
+          if (n.status?.time)
+            n.history = [
+              ...n.history.filter((s) => s.time !== n.status!.time),
+              sample(n.status),
+            ]
+              .sort((a, b) => Date.parse(a.time) - Date.parse(b.time))
+              .slice(-240)
+        }
       } catch (e) {
         if (e instanceof APIError && e.code === -32601) this.mode = 'rest'
         else throw e
@@ -121,6 +149,7 @@ export class KomariClient {
     if (this.mode === 'rest') {
       // Older REST API has no HTTP presence endpoint. Never claim authoritative online/offline.
       await mapLimit(targets, 4, async (n) => {
+        n.status = null
         try {
           const raw = await this.rest('/api/recent/' + encodeURIComponent(n.id))
           const list = Array.isArray(raw) ? raw : object(raw).records
@@ -132,13 +161,27 @@ export class KomariClient {
                 Date.parse(normalizeStatus(a).time),
             )[0]
             n.status = normalizeStatus(latest)
+            if (!full)
+              n.status.ping =
+                previous.nodes.find((o) => o.id === n.id)?.status?.ping || []
+            else
+              try {
+                n.status.ping = normalizePingRecords(
+                  await this.rest(
+                    `/api/records/ping?uuid=${encodeURIComponent(n.id)}&hours=1`,
+                  ),
+                  n.id,
+                )
+              } catch {
+                /* Probe endpoint is optional on older deployments. */
+              }
           }
         } catch (e) {
           n.error = errorMessage(e)
         }
       })
     }
-    if (ids && this.mode === 'rpc')
+    if (full && ids && this.mode === 'rpc')
       await mapLimit(targets, 4, async (n) => {
         try {
           n.history = await this.recent(n.id)
@@ -146,8 +189,21 @@ export class KomariClient {
           /* Optional chart must not turn a successful state fetch into a failure. */
         }
       })
+    let site = previous.site
+    if (full)
+      try {
+        const info = object(
+          this.mode === 'rpc'
+            ? await this.rpc('common:getPublicInfo')
+            : await this.rest('/api/public'),
+        )
+        site = { ...site, title: text(info.sitename, '', 80) }
+      } catch {
+        /* Site branding must never block monitoring. */
+      }
     return {
       nodes,
+      site,
       fetchedAt: new Date().toISOString(),
       transport: this.mode,
       ...(this.mode === 'rest'
@@ -173,6 +229,21 @@ export class KomariClient {
           })
         : await this.rest(
             `/api/records/load?uuid=${encodeURIComponent(id)}&hours=${hours}&load_type=all`,
+          ),
+      id,
+    )
+  }
+  async probes(id: string, hours: number) {
+    return normalizeProbeHistory(
+      this.mode === 'rpc'
+        ? await this.rpc('common:getRecords', {
+            type: 'ping',
+            uuid: id,
+            hours,
+            maxCount: 240,
+          })
+        : await this.rest(
+            `/api/records/ping?uuid=${encodeURIComponent(id)}&hours=${hours}`,
           ),
       id,
     )

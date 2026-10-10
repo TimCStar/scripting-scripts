@@ -14,6 +14,13 @@ import {
   percent,
   speed,
   timeLabel,
+  traffic,
+  bytes,
+  ratio,
+  probe,
+  latency,
+  lossLabel,
+  type Snapshot,
   type Node,
   type Sample,
 } from './model'
@@ -47,6 +54,140 @@ export const palette = {
     },
   },
 } as const
+export function SiteBrand({
+  snapshot,
+  size = 12,
+}: {
+  snapshot: Snapshot
+  size?: number
+}) {
+  const icon = snapshot.site?.icon
+    ? UIImage.fromBase64String(snapshot.site.icon)
+    : null
+  return (
+    <HStack spacing={6} frame={{ maxWidth: 'infinity' }}>
+      {icon ? (
+        <Image
+          image={icon}
+          resizable
+          scaleToFit
+          frame={{ width: size + 4, height: size + 4 }}
+        />
+      ) : (
+        <Image
+          systemName="waveform.path"
+          font={size + 2}
+          foregroundStyle={palette.teal}
+        />
+      )}
+      <Text
+        font={size}
+        fontWeight="semibold"
+        foregroundStyle={palette.ink}
+        lineLimit={1}
+        minScaleFactor={0.7}
+      >
+        {snapshot.site?.title || 'Komari 夜航'}
+      </Text>
+    </HStack>
+  )
+}
+export function TrafficMeter({
+  node,
+  compact = false,
+}: {
+  node: Node
+  compact?: boolean
+}) {
+  const amount = traffic(node),
+    limit =
+      node.trafficLimit && node.trafficLimit > 0 ? node.trafficLimit : null,
+    value = ratio(amount, limit)
+  return (
+    <VStack
+      alignment="leading"
+      spacing={compact ? 2 : 6}
+      frame={{ maxWidth: 'infinity' }}
+    >
+      <HStack spacing={4}>
+        <Text font={compact ? 9 : 11} foregroundStyle={palette.muted}>
+          流量
+        </Text>
+        <Spacer />
+        <Text
+          font={compact ? 9 : 13}
+          fontWeight="semibold"
+          monospacedDigit
+          foregroundStyle={
+            value !== null && value >= 90 ? palette.amber : palette.ink
+          }
+          lineLimit={1}
+          minScaleFactor={0.7}
+        >
+          {bytes(amount)}
+          {limit !== null ? ` / ${bytes(limit)}` : ''}
+        </Text>
+      </HStack>
+      {value !== null ? (
+        <ProgressView
+          value={Math.min(value, 100)}
+          total={100}
+          progressViewStyle="linear"
+          tint={value >= 90 ? palette.amber : palette.teal}
+        />
+      ) : null}
+      {!compact ? (
+        <Text font={10} foregroundStyle={palette.muted} lineLimit={1}>
+          {limit
+            ? `${percent(value)} 已用 · ${node.trafficType} 计量 · 余量 ${bytes(amount === null ? null : Math.max(0, limit - amount))}`
+            : '累计上报流量 · 未设置额度'}
+        </Text>
+      ) : null}
+    </VStack>
+  )
+}
+export function ProbeReading({
+  node,
+  compact = false,
+}: {
+  node: Node
+  compact?: boolean
+}) {
+  const p = probe(node)
+  return (
+    <VStack
+      alignment="leading"
+      spacing={compact ? 0 : 5}
+      frame={{ maxWidth: 'infinity' }}
+    >
+      {!compact ? (
+        <Text font={10} foregroundStyle={palette.muted} lineLimit={1}>
+          {p.name} · 一小时汇总
+        </Text>
+      ) : null}
+      <HStack spacing={4}>
+        <Text
+          font={compact ? 9 : 12}
+          monospacedDigit
+          foregroundStyle={palette.blue}
+          lineLimit={1}
+          minScaleFactor={0.7}
+        >
+          延迟 {latency(p.latest)}
+        </Text>
+        <Spacer />
+        <Text
+          font={compact ? 9 : 12}
+          monospacedDigit
+          foregroundStyle={(p.loss ?? 0) > 0 ? palette.amber : palette.teal}
+          lineLimit={1}
+        >
+          丢包 {lossLabel(p.loss)}
+        </Text>
+      </HStack>
+    </VStack>
+  )
+}
 export function StatusBadge({
   node,
   cached = false,
@@ -64,7 +205,7 @@ export function StatusBadge({
           ? palette.red
           : palette.muted
   return (
-    <HStack spacing={4}>
+    <HStack spacing={4} frame={{ width: compact ? 36 : 54 }}>
       <Image systemName="circle.fill" font={6} foregroundStyle={color} />
       <Text font={compact ? 9 : 11} foregroundStyle={color} lineLimit={1}>
         {cached ? '旧快照' : stateLabel[s]}
@@ -175,11 +316,13 @@ export function Trend({
   metric = 'cpu',
   height = 32,
   muted = false,
+  ceiling = 100,
 }: {
   history: Sample[]
-  metric?: 'cpu' | 'memory' | 'disk'
+  metric?: 'cpu' | 'memory' | 'disk' | 'up' | 'down'
   height?: number
   muted?: boolean
+  ceiling?: number
 }) {
   // Preserve true timestamps; missing readings split the chart into separate segments.
   const segments: Sample[][] = []
@@ -206,7 +349,7 @@ export function Trend({
       chartYScale={{
         domain: {
           from: 0,
-          to: Math.max(100, ...history.map((s) => s[metric] ?? 0)),
+          to: Math.max(ceiling, ...history.map((s) => s[metric] ?? 0)),
         },
         type: 'linear',
       }}
@@ -244,7 +387,7 @@ export function NodeCard({
   return (
     <VStack
       alignment="leading"
-      spacing={dense ? 4 : 10}
+      spacing={dense ? 4 : 8}
       frame={{ maxWidth: 'infinity' }}
     >
       <HStack spacing={6}>
@@ -258,17 +401,8 @@ export function NodeCard({
           {node.name}
         </Text>
         <Spacer />
-        {!dense ? <StatusBadge node={node} cached={cached} /> : null}
+        <StatusBadge node={node} cached={cached} compact={dense} />
       </HStack>
-      {dense ? (
-        <HStack spacing={4}>
-          <Text font={9} foregroundStyle={palette.muted}>
-            {node.region}
-          </Text>
-          <Spacer />
-          <StatusBadge node={node} cached={cached} compact />
-        </HStack>
-      ) : null}
       {!dense ? (
         <Text
           font={11}
@@ -276,11 +410,37 @@ export function NodeCard({
           lineLimit={1}
         >{`${node.region} / ${node.group} · ${node.cores ?? '—'} vCPU`}</Text>
       ) : null}
-      <Resources node={node} />
+      {dense ? (
+        <Text
+          font={9}
+          foregroundStyle={palette.muted}
+          lineLimit={1}
+          minScaleFactor={0.75}
+        >
+          CPU {percent(s?.cpu ?? null)} · 内存 {percent(s?.memory ?? null)} ·
+          磁盘 {percent(s?.disk ?? null)}
+        </Text>
+      ) : (
+        <Resources node={node} />
+      )}
+      <VStack
+        alignment="leading"
+        spacing={dense ? 4 : 8}
+        padding={dense ? 0 : 8}
+        background={
+          dense
+            ? undefined
+            : { style: palette.wash, shape: { type: 'rect', cornerRadius: 12 } }
+        }
+        frame={{ maxWidth: 'infinity' }}
+      >
+        <TrafficMeter node={node} compact={dense} />
+        <ProbeReading node={node} compact={dense} />
+      </VStack>
       {trend ? (
         <Trend
           history={node.history}
-          height={dense ? 16 : 36}
+          height={dense ? 16 : 24}
           muted={cached || state(node) === 'offline'}
         />
       ) : null}

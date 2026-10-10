@@ -74,6 +74,7 @@ export type Snapshot = {
   transport: 'rpc' | 'rest' | 'demo'
   notice?: string
   cached?: boolean
+  site?: { title: string; icon?: string; iconCheckedAt?: string }
 }
 export function object(x: unknown): Record<string, unknown> {
   return x !== null && typeof x === 'object' && !Array.isArray(x)
@@ -230,8 +231,9 @@ export function normalizeStatus(raw: unknown): Status {
       return {
         name: text(v.name, '探测任务'),
         latest: num(v.latest),
-        avg: num(v.avg),
-        loss: num(v.loss),
+        avg: v.loss === 100 ? null : num(v.avg),
+        loss:
+          num(v.loss) !== null && Number(v.loss) <= 100 ? num(v.loss) : null,
       }
     }),
   }
@@ -393,8 +395,10 @@ export function expiry(time: string, now = Date.now()): string {
 export function traffic(n: Node): number | null {
   const s = n.status
   if (!s) return null
-  const u = s.trafficUp,
-    d = s.trafficDown
+  // Komari's quota indicator uses agent cumulative counters. traffic_up/down
+  // in historical records are interval deltas, not billing-period counters.
+  const u = s.totalUp,
+    d = s.totalDown
   if (n.trafficType === 'up') return u
   if (n.trafficType === 'down') return d
   if (u === null || d === null) return null
@@ -403,6 +407,97 @@ export function traffic(n: Node): number | null {
     : n.trafficType === 'min'
       ? Math.min(u, d)
       : Math.max(u, d)
+}
+export function lossLabel(value: number | null): string {
+  return value === null ? '—' : `${Number(value.toFixed(1))}%`
+}
+export function latency(value: number | null): string {
+  return value === null ? '—' : `${Number(value.toFixed(1))} ms`
+}
+/** Overview explicitly uses the first task; never mix latency and loss from different probes. */
+export function probe(n: Node) {
+  return (
+    n.status?.ping[0] || {
+      name: '未配置探测',
+      latest: null,
+      avg: null,
+      loss: null,
+    }
+  )
+}
+export function normalizePingRecords(raw: unknown, id: string): Status['ping'] {
+  const r = object(raw),
+    tasks = Array.isArray(r.tasks) ? r.tasks : [],
+    records = Array.isArray(r.records) ? r.records : []
+  return tasks.map((task) => {
+    const t = object(task),
+      rows = records
+        .map(object)
+        .filter(
+          (p) =>
+            (!p.client || p.client === id) &&
+            p.task_id === t.id &&
+            iso(p.time) &&
+            typeof p.value === 'number' &&
+            Number.isFinite(p.value),
+        )
+        .sort((a, b) => Date.parse(String(a.time)) - Date.parse(String(b.time)))
+    const valid = rows.filter((p) => Number(p.value) >= 0)
+    return {
+      name: text(t.name, '探测任务'),
+      latest: valid.length ? num(valid.at(-1)!.value) : null,
+      avg: valid.length
+        ? valid.reduce((s, p) => s + Number(p.value), 0) / valid.length
+        : null,
+      loss: rows.length
+        ? ((rows.length - valid.length) / rows.length) * 100
+        : null,
+    }
+  })
+}
+export type ProbeHistory = {
+  name: string
+  latest: number | null
+  avg: number | null
+  loss: number | null
+  points: { time: string; value: number | null }[]
+}
+export function normalizeProbeHistory(
+  raw: unknown,
+  id: string,
+): ProbeHistory[] {
+  const r = object(raw),
+    tasks = Array.isArray(r.tasks) ? r.tasks : [],
+    rows = Array.isArray(r.records) ? r.records.map(object) : [],
+    summaries = normalizePingRecords(raw, id)
+  return tasks.map((task) => {
+    const t = object(task),
+      points = rows
+        .filter(
+          (p) =>
+            p.task_id === t.id && (!p.client || p.client === id) && iso(p.time),
+        )
+        .map((p) => ({ time: iso(p.time), value: num(p.value) }))
+        .sort((a, b) => Date.parse(a.time) - Date.parse(b.time))
+    // Server calculates summaries before downsampling: don't compute loss from sampled points.
+    const summary = summaries.find((p) => p.name === text(t.name, '探测任务'))
+    return {
+      name: text(t.name, '探测任务'),
+      latest: num(t.latest) ?? summary?.latest ?? null,
+      avg:
+        t.total === 0 || t.loss === 100
+          ? null
+          : (num(t.avg) ?? summary?.avg ?? null),
+      loss: t.total === 0 ? null : (num(t.loss) ?? summary?.loss ?? null),
+      points:
+        points.length <= 240
+          ? points
+          : Array.from(
+              { length: 240 },
+              (_, i) => points[Math.round((i * (points.length - 1)) / 239)],
+            ),
+    }
+  })
 }
 export function demoSnapshot(now = Date.now()): Snapshot {
   const nodes = normalizeNodes(
@@ -472,6 +567,7 @@ export function demoSnapshot(now = Date.now()): Snapshot {
     nodes,
     fetchedAt: new Date(now).toISOString(),
     transport: 'demo',
+    site: { title: '云端观测' },
     notice: '演示 · 虚构数据',
   }
 }

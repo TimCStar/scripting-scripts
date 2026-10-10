@@ -164,22 +164,32 @@ test('history sorts, deduplicates, drops invalid timestamps and preserves missin
   a.equal(h[0].cpu, 0)
   a.equal(h[1].cpu, null)
 })
-test('billing traffic uses period fields rather than cumulative totals', () => {
+test('traffic quota follows cumulative counters and all server calculation modes, never interval deltas', () => {
   const n = m.normalizeNodes([{ ...wire, traffic_limit_type: 'sum' }])[0]
   n.status = m.normalizeStatus({
     ...flat,
     net_total_up: 1000,
     net_total_down: 2000,
+    traffic_up: 10,
+    traffic_down: 20,
   })
+  for (const [type, value] of [
+    ['sum', 3000],
+    ['max', 2000],
+    ['min', 1000],
+    ['up', 1000],
+    ['down', 2000],
+  ]) {
+    n.trafficType = type
+    a.equal(m.traffic(n), value)
+  }
+  n.status.totalDown = null
   a.equal(m.traffic(n), null)
-  n.status.trafficUp = 10
-  n.status.trafficDown = 20
-  a.equal(m.traffic(n), 30)
-  n.trafficType = 'max'
-  a.equal(m.traffic(n), 20)
   n.trafficType = 'up'
-  a.equal(m.traffic(n), 10)
+  n.status.totalUp = 0
+  a.equal(m.traffic(n), 0)
 })
+
 test('RPC snapshot and detail use read-only methods, prefix, matching ID and maxCount spelling', async () => {
   const calls = [],
     client = new KomariClient(
@@ -234,7 +244,7 @@ test('unsupported RPC falls back to REST and never invents online status', async
   a.equal(s.transport, 'rest')
   a.equal(s.nodes[0].status.online, null)
   a.equal(m.state(s.nodes[0]), 'recent')
-  a.equal(calls.length, 3)
+  a.equal(calls.length, 5)
 })
 test('RPC authentication failure never probes REST and suppresses server error text', async () => {
   let calls = 0
@@ -314,4 +324,68 @@ test('REST per-node failures preserve other nodes and concurrency limit', async 
   a.equal(max, 4)
   a.equal(s.nodes.filter((n) => n.error).length, 1)
   a.equal(s.nodes.filter((n) => n.status).length, 8)
+})
+
+test('REST probes keep real zero and compute loss per task without mixing nodes', () => {
+  const time = new Date().toISOString()
+  const p = m.normalizePingRecords(
+    {
+      tasks: [
+        { id: 1, name: 'A' },
+        { id: 2, name: 'B' },
+      ],
+      records: [
+        { task_id: 1, client: 'node-1', time, value: 0 },
+        { task_id: 1, client: 'node-1', time, value: -1 },
+        { task_id: 1, client: 'another', time, value: 999 },
+        { task_id: 2, client: 'node-1', time, value: -1 },
+      ],
+    },
+    'node-1',
+  )
+  a.equal(p[0].loss, 50)
+  a.equal(p[0].avg, 0)
+  a.equal(p[0].latest, 0)
+  a.equal(p[1].loss, 100)
+  a.equal(p[1].avg, null)
+})
+test('downsampled probe chart uses full-window server summaries and preserves timeout gaps', () => {
+  const time = new Date().toISOString()
+  const p = m.normalizeProbeHistory(
+    {
+      tasks: [{ id: 1, name: 'A', total: 100, loss: 25, avg: 15, latest: 17 }],
+      records: [{ task_id: 1, client: 'node-1', time, value: -1 }],
+    },
+    'node-1',
+  )[0]
+  a.equal(p.loss, 25)
+  a.equal(p.avg, 15)
+  a.equal(p.latest, 17)
+  a.equal(p.points[0].value, null)
+})
+test('status-only refresh makes one RPC read, retains branding and normalized chart readings', async () => {
+  const calls = [],
+    previous = m.demoSnapshot(),
+    client = new KomariClient(
+      'https://example.com',
+      'fixture',
+      rpcFetch(
+        (r) => ({
+          jsonrpc: '2.0',
+          id: r.id,
+          result: { 'demo-1': { ...flat, time: new Date().toISOString() } },
+        }),
+        calls,
+      ),
+    )
+  previous.transport = 'rpc'
+  const result = await client.update(previous)
+  a.equal(calls.length, 1)
+  a.equal(result.site.title, previous.site.title)
+  a.equal(
+    result.nodes[0].history[0].memory,
+    previous.nodes[0].history[0].memory,
+  )
+  a.equal(result.nodes[0].history[0].down, previous.nodes[0].history[0].down)
+  a.equal(result.nodes[1].status, null)
 })

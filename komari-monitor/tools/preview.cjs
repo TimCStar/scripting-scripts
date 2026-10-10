@@ -10,6 +10,7 @@ const esc = (s) =>
     .replaceAll('"', '&quot;')
 function color(c, mode) {
   if (!c) return ''
+  if (c.style) return color(c.style, mode)
   if (typeof c === 'object' && c[mode]) return color(c[mode], mode)
   if (typeof c === 'object' && c.gradient)
     return `linear-gradient(135deg,${c.gradient.map((s) => s.color).join(',')})`
@@ -31,6 +32,8 @@ function css(p, mode) {
   if (p.foregroundStyle) s.push('color:' + color(p.foregroundStyle, mode))
   if (p.background || p.widgetBackground)
     s.push('background:' + color(p.background || p.widgetBackground, mode))
+  if (p.background?.shape?.cornerRadius)
+    s.push('border-radius:' + p.background.shape.cornerRadius + 'px')
   if (p.spacing !== undefined) s.push('gap:' + p.spacing + 'px')
   if (p.alignment === 'leading') s.push('align-items:flex-start')
   if (p.alignment === 'top') s.push('align-items:flex-start')
@@ -95,11 +98,18 @@ async function main() {
   let widgetSections = []
   for (const mode of ['light', 'dark']) {
     let cards = []
-    for (const [family, count] of [
-      ['systemSmall', 1],
-      ['systemMedium', 2],
-      ['systemLarge', 4],
-    ]) {
+    for (const [family, count] of process.env.KOMARI_PREVIEW_VARIANTS === '1'
+      ? [
+          ['systemMedium', 1],
+          ['systemLarge', 1],
+          ['systemLarge', 2],
+          ['systemLarge', 3],
+        ]
+      : [
+          ['systemSmall', 1],
+          ['systemMedium', 2],
+          ['systemLarge', 4],
+        ]) {
       const h = harness({
         family,
         width: family === 'systemSmall' ? 155 : 329,
@@ -109,13 +119,11 @@ async function main() {
       await h.globals.completion
       const m = h.load('model.ts'),
         snapshot = m.demoSnapshot(),
-        view = h
-          .load('widget.tsx')
-          .WidgetView({
-            snapshot,
-            family,
-            ids: snapshot.nodes.slice(0, count).map((n) => n.id),
-          })
+        view = h.load('widget.tsx').WidgetView({
+          snapshot,
+          family,
+          ids: snapshot.nodes.slice(0, count).map((n) => n.id),
+        })
       cards.push(
         `<article><div class="caption">${family === 'systemSmall' ? '01 / SMALL' : family === 'systemMedium' ? '02 / MEDIUM' : '03 / LARGE'}<span>${count} 台 VPS</span></div><div class="widget ${family}" data-theme="${mode}">${render(view, mode)}</div></article>`,
       )
@@ -130,8 +138,8 @@ async function main() {
   const dashboard = h.load('index.tsx').Dashboard(),
     detail = h.load('detail.tsx').Detail({ id: 'demo-1' }),
     html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Komari 夜航 · 设计预览</title><style>
- *{box-sizing:border-box}body{margin:0;background:#e8eeeb;color:#172e32;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}main{max-width:1120px;margin:auto;padding:44px 36px}.eyebrow{font-size:11px;font-weight:600;letter-spacing:3px;color:#087f78}h1{font-size:46px;letter-spacing:-2px;margin:14px 0 10px;font-weight:650}.subtitle{color:#607777;line-height:1.8;max-width:770px}.pill{display:inline-block;background:#d8e9e1;padding:6px 10px;font-size:11px;border-radius:20px;margin-top:10px}.theme-group{margin-top:34px}.mode-label{font-size:12px;letter-spacing:2px;margin-bottom:20px}.widget-grid{display:flex;gap:30px;align-items:flex-start}.caption{display:flex;justify-content:space-between;font-size:10px;letter-spacing:1px;color:#667e7b;margin:0 3px 10px}.caption span{letter-spacing:0}.widget{border-radius:25px;overflow:hidden;box-shadow:0 12px 32px #22393214;flex-shrink:0}.systemSmall{width:155px;height:155px}.systemMedium{width:329px;height:155px}.systemLarge{width:329px;height:345px}.vstack{display:flex;flex-direction:column;align-items:center;min-width:0}.hstack{display:flex;flex-direction:row;align-items:center;min-width:0;width:100%}.text{display:block;line-height:1.18;min-width:0}.spacer{flex:1;min-width:0}.symbol{display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1}.link{display:flex;flex-direction:column;color:inherit;text-decoration:none;flex:1;min-width:0}.meter{height:3px;background:#96a6a526;border-radius:4px;width:100%;overflow:hidden;flex-shrink:0}.meter i{display:block;height:100%;border-radius:4px}.chart{width:100%;overflow:visible;flex-shrink:0}.native-button{border:0;padding:0;background:none;color:#087f78;font:inherit;flex-shrink:0;cursor:pointer}.widget[data-theme="dark"]{color:#e7f4f0}.widget .link{min-height:0}.phones{display:flex;gap:30px;margin-top:26px}.phone{width:375px;height:690px;overflow:auto;border-radius:30px;background:#f1f6f4;border:7px solid #223336;box-shadow:0 12px 32px #22393215;scrollbar-width:none}.native-page{padding:16px 12px}.native-page nav{font-size:17px;font-weight:600;display:flex;justify-content:space-between;margin:4px 4px 18px}.native-page nav span{font-size:12px;color:#087f78}.native-page section{margin-bottom:15px}.section-title{padding:7px 5px;font-size:11px;color:#6f8380}.section-body{background:white;border-radius:17px;padding:14px;display:flex;flex-direction:column;gap:12px}.native-page .section-body>.link{width:100%}.native-page .hstack{gap:14px}.search{background:#f3f6f5;border:0;width:100%;padding:12px;border-radius:10px;font:inherit}.picker{display:flex;background:#eef3f1;padding:3px;border-radius:9px;gap:3px}.picker>span{flex:1;text-align:center;padding:8px 2px;font-size:12px;border-radius:7px}.picker .active{background:white;box-shadow:0 1px 4px #0001}.footnote{font-size:12px;line-height:1.8;color:#687d79;margin-top:25px}@media(max-width:950px){.widget-grid{flex-wrap:wrap}.phones{flex-wrap:wrap}main{padding:30px 20px}}
- </style><main><div class="eyebrow">KOMARI × SCRIPTING</div><h1>云端，一眼可见。</h1><p class="subtitle">Komari 夜航 · 三种尺寸各有节奏。晨光里是柔和的纸面，夜晚变成安静的控制台。资源水位、节点状态与网络流动，保持清晰。</p><div class="pill">从实际 TSX 生成 · 演示数据 · HTML 布局近似，非 iOS 截图</div>${widgetSections.join('')}<div class="mode-label" style="margin-top:45px">FLEET & NODE / 原生总览与详情</div><div class="phones"><div class="phone">${render(dashboard, 'light')}</div><div class="phone">${render(detail, 'light')}</div></div><p class="footnote">此预览用于审阅内容与配色。字体、SF Symbols、SwiftUI 自适应尺寸和系统边距以 iPhone 实际渲染为准。页面中的演示按钮不连接服务器。</p></main></html>`
+ *{box-sizing:border-box}body{margin:0;background:#e8eeeb;color:#172e32;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}main{max-width:1120px;margin:auto;padding:44px 36px}.eyebrow{font-size:11px;font-weight:600;letter-spacing:3px;color:#087f78}h1{font-size:46px;letter-spacing:-2px;margin:14px 0 10px;font-weight:650}.subtitle{color:#607777;line-height:1.8;max-width:770px}.pill{display:inline-block;background:#d8e9e1;padding:6px 10px;font-size:11px;border-radius:20px;margin-top:10px}.theme-group{margin-top:34px}.mode-label{font-size:12px;letter-spacing:2px;margin-bottom:20px}.widget-grid{display:flex;gap:30px;align-items:flex-start}.caption{display:flex;justify-content:space-between;font-size:10px;letter-spacing:1px;color:#667e7b;margin:0 3px 10px}.caption span{letter-spacing:0}.widget{border-radius:25px;overflow:hidden;box-shadow:0 12px 32px #22393214;flex-shrink:0}.systemSmall{width:155px;height:155px}.systemMedium{width:329px;height:155px}.systemLarge{width:329px;height:345px}.vstack{display:flex;flex-direction:column;align-items:center;min-width:0}.hstack{display:flex;flex-direction:row;align-items:center;min-width:0;width:100%}.text{display:block;line-height:1.18;min-width:0}.spacer{flex:1;min-width:0}.symbol{display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1}.link{display:flex;flex-direction:column;color:inherit;text-decoration:none;flex:1;min-width:0}.meter{height:3px;background:#96a6a526;border-radius:4px;width:100%;overflow:hidden;flex-shrink:0}.meter i{display:block;height:100%;border-radius:4px}.chart{width:100%;overflow:visible;flex-shrink:0}.native-button{border:0;padding:0;background:none;color:#087f78;font:inherit;flex-shrink:0;cursor:pointer}.widget[data-theme="dark"]{color:#e7f4f0}.widget .link{min-height:0}.phones{display:flex;flex-wrap:wrap;gap:30px;margin-top:26px}.phone{width:375px;height:690px;overflow:auto;border-radius:30px;background:#f1f6f4;border:7px solid #223336;box-shadow:0 12px 32px #22393215;scrollbar-width:none}.native-page{padding:16px 12px}.native-page nav{font-size:17px;font-weight:600;display:flex;justify-content:space-between;margin:4px 4px 18px}.native-page nav span{font-size:12px;color:#087f78}.native-page section{margin-bottom:15px}.section-title{padding:7px 5px;font-size:11px;color:#6f8380}.section-body{background:white;border-radius:17px;padding:14px;display:flex;flex-direction:column;gap:12px}.native-page .section-body>.link{width:100%}.native-page .hstack{gap:14px}.search{background:#f3f6f5;border:0;width:100%;padding:12px;border-radius:10px;font:inherit}.picker{display:flex;background:#eef3f1;padding:3px;border-radius:9px;gap:3px}.picker>span{flex:1;text-align:center;padding:8px 2px;font-size:12px;border-radius:7px}.picker .active{background:white;box-shadow:0 1px 4px #0001}.phone.dark{background:#0c161b;color:#e7f4f0}.phone.dark .section-body{background:#17252b}.phone.dark .section-title{color:#94aba9}.phone.dark .picker{background:#203B3A}.phone.dark .picker .active{background:#2b3f44}.phone.dark .search{background:#203B3A;color:#e7f4f0}.footnote{font-size:12px;line-height:1.8;color:#687d79;margin-top:25px}@media(max-width:950px){.widget-grid{flex-wrap:wrap}.phones{flex-wrap:wrap}main{padding:30px 20px}}
+ </style><main><div class="eyebrow">KOMARI × SCRIPTING</div><h1>云端，一眼可见。</h1><p class="subtitle">Komari 夜航 · 三种尺寸各有节奏。晨光里是柔和的纸面，夜晚变成安静的控制台。资源水位、流量额度、延迟与丢包率，放在视线之内。全屏面板持续更新，站点名称与图标自动适配。</p><div class="pill">从实际 TSX 生成 · 演示数据 · HTML 布局近似，非 iOS 截图</div>${widgetSections.join('')}<div class="mode-label" style="margin-top:45px">FLEET & NODE / 原生总览与详情</div><div class="phones"><div class="phone">${render(dashboard, 'light')}</div><div class="phone">${render(detail, 'light')}</div><div class="phone dark">${render(dashboard, 'dark')}</div><div class="phone dark">${render(detail, 'dark')}</div></div><p class="footnote">此预览用于审阅内容与配色。字体、SF Symbols、SwiftUI 自适应尺寸和系统边距以 iPhone 实际渲染为准。页面中的演示按钮不连接服务器。</p></main></html>`
   fs.mkdirSync(path.join(__dirname, '..', 'assets'), { recursive: true })
   fs.writeFileSync(
     path.join(__dirname, '..', 'assets', 'design-preview.html'),

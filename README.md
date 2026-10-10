@@ -17,7 +17,7 @@
 
 ### [Komari 夜航](komari-monitor/README.md)
 
-Komari VPS 监控：小、中、大号主屏幕组件显示选中的 VPS；打开脚本进入全部节点总览，支持搜索、分组、状态筛选和逐台详情。原生深浅色界面，包含资源水位、网速、运行时间、历史曲线与机器档案。
+Komari VPS 监控：小、中、大号主屏幕组件显示选中的 VPS；打开脚本进入全部节点总览，支持搜索、分组、状态筛选和逐台详情。全屏深浅色界面，前台约 3 秒持续更新；包含资源水位、流量额度、延迟／丢包率、网速、历史曲线与机器档案。小组件品牌自动跟随站点标题和图标。
 
 - [导入安装包](komari-monitor/dist/Komari-Nightflight.scripting)：下载原始文件，在 iPhone「分享 → Scripting」导入。
 - [安装与使用说明](komari-monitor/README.md)

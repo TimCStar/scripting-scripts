@@ -27,6 +27,9 @@ import {
   Resource,
   Trend,
   UpdateNote,
+  SiteBrand,
+  TrafficMeter,
+  ProbeReading,
 } from './ui'
 import { RefreshKomariIntent } from './app_intents'
 
@@ -55,14 +58,7 @@ export function WidgetView({
   ).length
   const title = (
     <HStack spacing={5}>
-      <Image
-        systemName="waveform.path"
-        font={12}
-        foregroundStyle={palette.teal}
-      />
-      <Text font={10} fontWeight="semibold" foregroundStyle={palette.muted}>
-        KOMARI / 夜航
-      </Text>
+      <SiteBrand snapshot={snapshot} size={10} />
       <Spacer />
     </HStack>
   )
@@ -149,41 +145,38 @@ export function WidgetView({
               <Spacer />
             </HStack>
             <StatusBadge node={solo} cached={snapshot.cached} compact />
-            <HStack alignment="firstTextBaseline" spacing={3}>
+            <Text
+              font={9}
+              foregroundStyle={palette.muted}
+              lineLimit={1}
+              minScaleFactor={0.8}
+            >
+              CPU {percent(s?.cpu ?? null)} · 内存 {percent(s?.memory ?? null)}
+            </Text>
+            <TrafficMeter node={solo} compact />
+            <ProbeReading node={solo} compact />
+            <HStack spacing={3}>
               <Text
-                font={Widget.displaySize.height < 160 ? 30 : 36}
-                fontWeight="semibold"
+                font={9}
                 monospacedDigit
-                foregroundStyle={palette.ink}
+                foregroundStyle={palette.blue}
                 lineLimit={1}
-                minScaleFactor={0.8}
+                minScaleFactor={0.65}
               >
-                {percent(s?.cpu ?? null)}
-              </Text>
-              <Text font={9} foregroundStyle={palette.muted}>
-                CPU
+                ↓ {speed(s?.down ?? null)}
               </Text>
               <Spacer />
-            </HStack>
-            <HStack spacing={8}>
-              <Text font={9} foregroundStyle={palette.muted}>
-                内存 {percent(s?.memory ?? null)}
-              </Text>
-              <Spacer />
-              <Text font={9} foregroundStyle={palette.muted}>
-                磁盘 {percent(s?.disk ?? null)}
+              <Text
+                font={9}
+                monospacedDigit
+                foregroundStyle={palette.teal}
+                lineLimit={1}
+                minScaleFactor={0.65}
+              >
+                ↑ {speed(s?.up ?? null)}
               </Text>
             </HStack>
             <Spacer />
-            <Text
-              font={9}
-              monospacedDigit
-              foregroundStyle={palette.teal}
-              lineLimit={1}
-              minScaleFactor={0.7}
-            >
-              ↓ {speed(s?.down ?? null)}
-            </Text>
           </VStack>
         ) : !large ? (
           <HStack
@@ -206,13 +199,6 @@ export function WidgetView({
                     dense
                     trend={false}
                   />
-                  {nodes.length === 1 ? (
-                    <Trend
-                      history={n.history}
-                      height={25}
-                      muted={snapshot.cached}
-                    />
-                  ) : null}
                 </VStack>
               </Link>
             ))}
@@ -225,7 +211,7 @@ export function WidgetView({
           >
             <HStack alignment="firstTextBaseline">
               <Text
-                font={23}
+                font={15}
                 fontWeight="semibold"
                 monospacedDigit
                 foregroundStyle={palette.ink}

@@ -13,8 +13,17 @@ import {
   Script,
   useState,
 } from 'scripting'
-import { state, speed, timeLabel, expiry } from './model'
-import { palette, NodeCard, Reading, UpdateNote } from './ui'
+import {
+  state,
+  speed,
+  timeLabel,
+  expiry,
+  bytes,
+  traffic,
+  probe,
+  ratio,
+} from './model'
+import { palette, NodeCard, Reading, UpdateNote, SiteBrand } from './ui'
 import { Settings } from './settings'
 import { Detail } from './detail'
 import { useMonitor } from './monitor'
@@ -43,7 +52,9 @@ export function Dashboard() {
           (filter === 'focus' &&
             (state(n, !!m.snapshot.cached) !== 'online' ||
               (n.status?.cpu ?? 0) >= 80 ||
-              (n.status?.memory ?? 0) >= 85)) ||
+              (n.status?.memory ?? 0) >= 85 ||
+              (probe(n).loss ?? 0) > 0 ||
+              (ratio(traffic(n), n.trafficLimit) ?? 0) >= 90)) ||
           (filter === 'online' && state(n, !!m.snapshot.cached) === 'online')),
     )
   const sorted =
@@ -65,7 +76,8 @@ export function Dashboard() {
   }
   return (
     <List
-      navigationTitle="Komari 夜航"
+      navigationTitle={m.snapshot.site?.title || 'Komari 夜航'}
+      listStyle="insetGroup"
       navigationBarTitleDisplayMode="inline"
       onAppear={m.appear}
       onDisappear={m.disappear}
@@ -81,17 +93,18 @@ export function Dashboard() {
       }}
     >
       <Section>
-        <VStack alignment="leading" spacing={18} padding={{ vertical: 12 }}>
-          <Text font={11} fontWeight="semibold" foregroundStyle={palette.teal}>
-            CLOUD OBSERVATORY / 云端观测
-          </Text>
-          <Text font={30} fontWeight="semibold" foregroundStyle={palette.ink}>
-            {m.config.demo
-              ? '你的云端，正在呼吸。'
-              : offline
-                ? '有节点暂时离线。'
-                : '你的云端，一眼可见。'}
-          </Text>
+        <VStack alignment="leading" spacing={12} padding={{ vertical: 8 }}>
+          <HStack>
+            <SiteBrand snapshot={m.snapshot} size={18} />
+            <Text
+              font={10}
+              lineLimit={1}
+              minScaleFactor={0.7}
+              foregroundStyle={m.snapshot.cached ? palette.amber : palette.teal}
+            >
+              {m.liveNote}
+            </Text>
+          </HStack>
           <HStack spacing={20}>
             <Reading
               title="在线"
@@ -112,6 +125,23 @@ export function Dashboard() {
               accent
             />
           </HStack>
+          <HStack spacing={18}>
+            <Reading
+              title="累计下载 · 可读节点"
+              value={bytes(
+                nodes.reduce((sum, n) => sum + (n.status?.totalDown ?? 0), 0) ||
+                  (nodes.some((n) => n.status?.totalDown === 0) ? 0 : null),
+              )}
+            />
+            <Reading
+              title="累计上传 · 可读节点"
+              value={bytes(
+                nodes.reduce((sum, n) => sum + (n.status?.totalUp ?? 0), 0) ||
+                  (nodes.some((n) => n.status?.totalUp === 0) ? 0 : null),
+              )}
+              accent
+            />
+          </HStack>
           <UpdateNote
             time={m.snapshot.fetchedAt}
             cached={m.snapshot.cached}
@@ -129,7 +159,7 @@ export function Dashboard() {
           ) : null}
         </VStack>
       </Section>
-      <Section header={<Text>舰队 / FLEET</Text>}>
+      <Section header={<Text>节点监控 / NODES</Text>}>
         <TextField
           title="搜索 VPS"
           prompt="名称、地区、分组、标签"
@@ -198,6 +228,7 @@ async function run() {
       ? Script.queryParameters.node
       : ''
   await Navigation.present({
+    modalPresentationStyle: 'fullScreen',
     element: (
       <NavigationStack>
         {id ? <Detail id={id} home={() => <Dashboard />} /> : <Dashboard />}

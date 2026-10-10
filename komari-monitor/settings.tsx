@@ -190,8 +190,8 @@ export function Settings() {
           ))}
         </Picker>
         <Text>
-          总览在可见时每 30 秒读取；小组件由 iOS
-          决定实际刷新时机。CPU、内存、磁盘和网速均为带时间戳的快照。
+          全屏面板在前台约每 3 秒更新，后台暂停；历史曲线约每分钟更新。 小组件由
+          iOS 决定实际刷新时机。站点标题与图标自动读取。
         </Text>
         <Button title="保存设置" action={save} />
         <Text>{message}</Text>
