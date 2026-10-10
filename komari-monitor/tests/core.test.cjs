@@ -349,6 +349,55 @@ test('REST probes keep real zero and compute loss per task without mixing nodes'
   a.equal(p[1].loss, 100)
   a.equal(p[1].avg, null)
 })
+test('node probe summary averages all task means instead of the first or latest reading', () => {
+  const node = m.demoSnapshot().nodes[0]
+  node.status.ping = m.normalizeStatus({
+    ping: {
+      a: { name: 'A', latest: 900, avg: 20, loss: 10 },
+      b: { name: 'B', latest: 800, avg: 60, loss: 30 },
+    },
+  }).ping
+  const summary = m.probe(node)
+  a.equal(summary.avg, 40)
+  a.equal(summary.loss, 20)
+  a.equal(summary.name, '2 项探测均值')
+  node.status.ping.reverse()
+  a.deepEqual(m.probe(node), summary)
+})
+
+test('probe averages preserve zero, skip missing values and include fully failed tasks in loss', () => {
+  const node = m.demoSnapshot().nodes[0]
+  node.status.ping = [
+    { name: 'Zero', latest: 10, avg: 0, loss: 0 },
+    { name: 'Failed', latest: null, avg: 0, loss: 100 },
+    { name: 'Unknown', latest: 999, avg: null, loss: null },
+  ]
+  a.equal(m.probe(node).avg, 0)
+  a.equal(m.probe(node).loss, 50)
+  node.status.ping = [node.status.ping[1]]
+  a.equal(m.probe(node).avg, null)
+  a.equal(m.probe(node).loss, 100)
+})
+
+test('probe averages handle one task, invalid cached values and absent data without a latest fallback', () => {
+  const node = m.demoSnapshot().nodes[0]
+  node.status.ping = [
+    { name: 'Valid', latest: 900, avg: 47, loss: 2.4 },
+    { name: 'Invalid', latest: 800, avg: Infinity, loss: 101 },
+    { name: 'Negative', latest: -1, avg: -1, loss: -1 },
+    { name: 'Unknown', latest: 700, avg: NaN, loss: NaN },
+  ]
+  a.equal(m.probe(node).avg, 47)
+  a.equal(m.probe(node).loss, 2.4)
+  node.status.ping = []
+  a.equal(m.probe(node).avg, null)
+  a.equal(m.probe(node).loss, null)
+  a.equal(m.probe(node).name, '未配置探测')
+  node.status = null
+  a.equal(m.probe(node).avg, null)
+  a.equal(m.probe(node).loss, null)
+})
+
 test('downsampled probe chart uses full-window server summaries and preserves timeout gaps', () => {
   const time = new Date().toISOString()
   const p = m.normalizeProbeHistory(

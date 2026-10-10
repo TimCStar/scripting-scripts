@@ -419,16 +419,25 @@ export function lossLabel(value: number | null): string {
 export function latency(value: number | null): string {
   return value === null ? '—' : `${Number(value.toFixed(1))} ms`
 }
-/** Overview explicitly uses the first task; never mix latency and loss from different probes. */
+/** Equal weight per task's one-hour summary; missing values never count as zero. */
 export function probe(n: Node) {
-  return (
-    n.status?.ping[0] || {
-      name: '未配置探测',
-      latest: null,
-      avg: null,
-      loss: null,
-    }
-  )
+  const tasks = n.status?.ping ?? []
+  const mean = (values: (number | null)[]) => {
+    const valid = values.filter((v): v is number => v !== null)
+    return valid.length
+      ? valid.reduce((sum, v) => sum + v / valid.length, 0)
+      : null
+  }
+  return {
+    name: tasks.length ? `${tasks.length} 项探测均值` : '未配置探测',
+    avg: mean(tasks.map((p) => (p.loss === 100 ? null : num(p.avg)))),
+    loss: mean(
+      tasks.map((p) => {
+        const loss = num(p.loss)
+        return loss !== null && loss <= 100 ? loss : null
+      }),
+    ),
+  }
 }
 export function normalizePingRecords(raw: unknown, id: string): Status['ping'] {
   const r = object(raw),

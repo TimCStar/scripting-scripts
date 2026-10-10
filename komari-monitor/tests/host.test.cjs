@@ -295,6 +295,64 @@ test('site title, cached favicon and compact traffic/probe readings appear in ea
     a.ok(tree.some((n) => n.type === 'Image' && n.props.image?.decoded))
   }
 })
+test('all widget layouts and panel cards display the same task-averaged probe readings', async () => {
+  for (const [family, count] of [
+    ['systemSmall', 1],
+    ['systemMedium', 1],
+    ['systemMedium', 2],
+    ['systemLarge', 1],
+    ['systemLarge', 2],
+    ['systemLarge', 3],
+    ['systemLarge', 4],
+  ]) {
+    const { h, m } = setup({ family }),
+      snapshot = m.demoSnapshot()
+    for (const n of snapshot.nodes)
+      n.status.ping = [
+        { name: 'A', latest: 900, avg: 20, loss: 10 },
+        { name: 'B', latest: 800, avg: 60, loss: 30 },
+      ]
+    h.load('widget.tsx')
+    await h.globals.completion
+    const widget = h.load('widget.tsx').WidgetView({
+      snapshot,
+      family,
+      ids: snapshot.nodes.slice(0, count).map((n) => n.id),
+    })
+    const labels = walk(widget)
+      .filter((n) => n.type === 'Text')
+      .map((n) => n.children.join(''))
+    a.equal(labels.filter((s) => s === '延迟 40 ms').length, count)
+    a.equal(labels.filter((s) => s === '丢包 20%').length, count)
+    a.ok(!labels.some((s) => /延迟 (20|60|800|900) ms/.test(s)))
+    for (const dense of [false, true]) {
+      const card = h.load('ui.tsx').NodeCard({ node: snapshot.nodes[0], dense })
+      const cardLabels = walk(card)
+        .filter((n) => n.type === 'Text')
+        .map((n) => n.children.join(''))
+      a.ok(cardLabels.includes('延迟 40 ms'))
+      a.ok(cardLabels.includes('丢包 20%'))
+    }
+    h.load('monitor.tsx').useMonitor = () => ({
+      snapshot,
+      config: m.defaultConfig(),
+      busy: false,
+      liveNote: '演示数据',
+      error: '',
+      reload: async () => {},
+      appear() {},
+      disappear() {},
+    })
+    const detail = h.load('detail.tsx').Detail({ id: snapshot.nodes[0].id })
+    const detailLabels = walk(detail)
+      .filter((n) => n.type === 'Text')
+      .map((n) => n.children.join(''))
+    a.ok(detailLabels.includes('延迟 40 ms'))
+    a.ok(detailLabels.includes('丢包 20%'))
+    a.ok(detailLabels.some((s) => s.includes('2 项探测均值')))
+  }
+})
+
 test('favicon decoding is cached, never receives Authorization and is not fetched every status tick', async () => {
   const { h, s, c } = setup(),
     calls = []

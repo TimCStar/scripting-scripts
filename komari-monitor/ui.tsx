@@ -209,7 +209,7 @@ export function ProbeReading({
           lineLimit={1}
           minScaleFactor={0.7}
         >
-          延迟 {latency(p.latest)}
+          延迟 {latency(p.avg)}
         </Text>
         <Spacer />
         <Text
