@@ -161,13 +161,38 @@ test('an optional stalled favicon cannot leave successful monitoring stuck in co
   s.render().disappear()
 })
 
-test('unavailable scene events report compatibility trouble while still loading the page', async () => {
+test('module-exported scene events work without a global and clean up on unmount', async () => {
   const s = setup()
-  s.h.globals.AppEvents = undefined
+  a.equal('AppEvents' in s.h.globals, false)
+  s.h.bridge.fetch = success
+  s.render()
+  const cleanup = s.h.effects[0]()
+  s.render().appear()
+  await flush()
+  a.equal(s.render().error, '')
+  a.match(s.render().liveNote, /自动更新/)
+  a.equal(s.h.bridge.AppEvents.scenePhase.listeners.size, 1)
+  s.h.bridge.AppEvents.scenePhase.emit('background')
+  a.equal(s.render().liveNote, '已暂停')
+  a.equal(s.timers.size, 1) // Only the appearance watchdog remains.
+  s.h.bridge.AppEvents.scenePhase.emit('active')
+  await flush()
+  a.equal(s.render().error, '')
+  a.match(s.render().liveNote, /自动更新/)
+  cleanup()
+  a.equal(s.h.bridge.AppEvents.scenePhase.listeners.size, 0)
+  a.equal(s.timers.size, 0)
+})
+
+test('unavailable scene events report listener trouble while still loading the page', async () => {
+  const s = setup()
+  s.h.bridge.AppEvents = undefined
   s.h.bridge.fetch = success
   s.render().appear()
   await flush()
   a.match(s.render().error, /监听不可用/)
+  a.ok(!s.render().error.includes('请更新'))
+  a.match(s.render().liveNote, /自动更新/)
   a.equal(s.render().snapshot.nodes.length, 1)
   a.equal(s.render().busy, false)
   a.doesNotThrow(() => s.render().disappear())
@@ -237,5 +262,5 @@ test('a missing native appearance callback reports startup trouble and manual re
   a.equal(s.render().snapshot.nodes.length, 1)
   cleanup()
   a.equal(s.timers.size, 0)
-  a.equal(s.h.globals.AppEvents.scenePhase.listeners.size, 0)
+  a.equal(s.h.bridge.AppEvents.scenePhase.listeners.size, 0)
 })

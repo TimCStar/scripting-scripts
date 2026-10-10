@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'scripting'
+import { AppEvents, useState, useEffect } from 'scripting'
 import { readConfig, initialSnapshot, refresh } from './state'
 import { errorMessage } from './client'
 /** Fast status reads, slow metadata reads. Only one request sequence per visible page. */
@@ -126,7 +126,7 @@ export function useMonitor() {
       control.lifecycleError = ''
     } catch {
       control.lifecycleError =
-        '前后台状态监听不可用，请更新 Scripting。仍可在当前页面读取数据。'
+        '前后台状态监听不可用。当前页面仍可自动更新，离开页面会停止。'
       setError(control.lifecycleError)
     }
     start()

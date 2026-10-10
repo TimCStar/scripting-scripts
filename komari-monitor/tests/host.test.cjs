@@ -239,14 +239,14 @@ test('fast foreground updates use 3 seconds, only fetch statuses and stop while 
   a.equal(delays.at(-1), 3000)
   await timer()
   a.equal(count(), 5)
-  h.globals.AppEvents.scenePhase.emit('background')
+  h.bridge.AppEvents.scenePhase.emit('background')
   await timer()
   a.equal(count(), 5)
-  h.globals.AppEvents.scenePhase.emit('active')
+  h.bridge.AppEvents.scenePhase.emit('active')
   await new Promise((resolve) => setImmediate(resolve))
   a.equal(count(), 6)
   monitor.disappear()
-  a.equal(h.globals.AppEvents.scenePhase.listeners.size, 0)
+  a.equal(h.bridge.AppEvents.scenePhase.listeners.size, 0)
 })
 test('automatic retry backs off during failure and recovers its interval after success', async () => {
   const { h } = setup(),
@@ -346,7 +346,7 @@ test('rerendered page removes the original scene listener rather than its new cl
   await new Promise((resolve) => setImmediate(resolve))
   const rerender = useMonitor()
   rerender.disappear()
-  a.equal(h.globals.AppEvents.scenePhase.listeners.size, 0)
+  a.equal(h.bridge.AppEvents.scenePhase.listeners.size, 0)
 })
 
 test('upgrading retries a legacy failed favicon cache and decodes a 218 KB PNG served as ico', async () => {

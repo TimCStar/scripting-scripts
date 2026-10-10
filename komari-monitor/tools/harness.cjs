@@ -27,6 +27,20 @@ function harness({
             .filter((x) => x !== undefined && x !== null && x !== false),
         }
   const bridge = {
+    AppEvents: {
+      scenePhase: {
+        listeners: new Set(),
+        addListener(fn) {
+          this.listeners.add(fn)
+        },
+        removeListener(fn) {
+          this.listeners.delete(fn)
+        },
+        emit(phase) {
+          for (const fn of this.listeners) fn(phase)
+        },
+      },
+    },
     Script: {
       name: 'Komari 夜航',
       queryParameters: {},
@@ -94,20 +108,6 @@ function harness({
     bridge[n] = n
   const globals = {
     UIImage: { fromBase64String: () => null, fromData: () => null },
-    AppEvents: {
-      scenePhase: {
-        listeners: new Set(),
-        addListener(fn) {
-          this.listeners.add(fn)
-        },
-        removeListener(fn) {
-          this.listeners.delete(fn)
-        },
-        emit(phase) {
-          for (const fn of this.listeners) fn(phase)
-        },
-      },
-    },
     jsx,
     Fragment: 'Fragment',
     Date,
