@@ -42,9 +42,17 @@ export function resetTime(at:string|null|undefined):string {
   return `${date.getMonth()+1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-/** Keep the reset label separate so the update footer never gains a reset prefix. */
-export function resetLabel(at:string|null|undefined):string {
-  return `重置于 ${resetTime(at)}`
+/** Render-time remaining duration. Never roll an expired snapshot into a new window.
+ * Floor complete units; under one minute stays explicit rather than showing zero. */
+export function countdown(at:string|null|undefined,now=Date.now()):string {
+  const end=at?Date.parse(at):NaN
+  if(!Number.isFinite(end)||!Number.isFinite(now))return '—'
+  const remaining=end-now
+  if(remaining<=0)return '0m'
+  const minutes=Math.floor(remaining/60_000)
+  if(minutes<1)return '<1m'
+  const hours=Math.floor(minutes/60),days=Math.floor(hours/24)
+  return days>0?`${days}d${hours%24}h`:hours>0?`${hours}h${minutes%60}m`:`${minutes}m`
 }
 
 /** Oldest successful read among the displayed accounts. Global cache write time can

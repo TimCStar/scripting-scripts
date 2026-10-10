@@ -1,13 +1,13 @@
 {
   "name": "sub2api-scripting-monitor",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "private": true,
   "description": "Sub2API iOS Scripting 被动监控与手动确认重置",
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "typecheck:core": "tsc --strict --target es2022 --module esnext --moduleResolution bundler --noEmit model.ts client.ts operations.ts display.ts provider-images.ts provider-artwork.ts",
     "check:syntax": "node tests/check-syntax.cjs",
-    "check:render": "node tests/check-render.cjs"
+    "check:render": "node tests/check-render.cjs && node tests/check-intent.cjs"
   },
   "devDependencies": {
     "typescript": "5.9.3"
