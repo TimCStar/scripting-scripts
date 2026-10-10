@@ -1,6 +1,6 @@
 import { Widget, VStack, HStack, Text, Spacer, ProgressView, Link, Script, fetch } from 'scripting'
 import { barPercent, isStale, makeDemo, selectWidgetIDs, widgetLayout, type AccountView, type Window, type Config, type Layout } from './model'
-import {displayName,windowDollars,visibleWindows,resetTime} from './display'
+import {displayName,windowDollars,visibleWindows,resetTime,updateFooter} from './display'
 import {ProviderIcon,preloadProviderIcons,type ProviderImages} from './provider-icons'
 import { loadAccounts, type Auth } from './client'
 import { readConfig, readCache, saveCache, AUTH_KEY } from './state'
@@ -18,20 +18,21 @@ function snapshotNote(w:Window,c:Config):string {
   if(w.resetsAt&&Date.parse(w.resetsAt)<=now)return '待更新'
   return isStale(w.updatedAt,c.staleMinutes,now)?'旧快照':''
 }
-function Meter({window:w,config:c,dense=false,compact=false,big=false}:{window:Window;config:Config;dense?:boolean;compact?:boolean;big?:boolean}) {
+function Meter({window:w,config:c,dense=false,compact=false,big=false,solo=false}:{window:Window;config:Config;dense?:boolean;compact?:boolean;big?:boolean;solo?:boolean}) {
   const note=snapshotNote(w,c)
-  return <VStack alignment="leading" spacing={dense||compact?1:3} frame={{maxWidth:'infinity'}}>
+  return <VStack alignment="leading" spacing={big&&solo?8:dense||compact?1:3} frame={{maxWidth:'infinity'}}>
     <HStack spacing={3}>
-      <Text font={big?14:dense||compact?10:11} fontWeight="semibold" foregroundStyle={muted}>{w.label}{note?` · ${note}`:''}</Text><Spacer/>
-      <Text font={big?19:dense?11:compact?12:13} fontWeight="semibold" monospacedDigit foregroundStyle={w.percent===null?muted:meterColor}>{w.percent===null?'未知':`${Math.round(w.percent)}%`}</Text>
+      <Text font={big&&solo?17:big?14:dense||compact?10:11} fontWeight="semibold" foregroundStyle={muted}>{w.label}{note?` · ${note}`:''}</Text><Spacer/>
+      <Text font={big&&solo?44:big?19:solo&&!dense&&!compact?25:dense?11:compact?12:13} fontWeight="semibold" monospacedDigit foregroundStyle={w.percent===null?muted:meterColor}>{w.percent===null?'未知':`${Math.round(w.percent)}%`}</Text>
     </HStack>
     {w.percent!==null?<ProgressView value={(barPercent(w.percent)??0)/100} total={1} progressViewStyle="linear" tint={meterColor}/>:<Text font={dense?8:10} foregroundStyle={muted}>额度未提供</Text>}
-    {w.label==='7d'?<Text font={big?13:dense||compact?9:10} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{windowDollars(w,c,now)}</Text>:null}
-    <Text font={big?12:dense||compact?8:9} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{resetTime(w.resetsAt)}</Text>
+    {w.label==='7d'?<Text font={big&&solo?17:big?13:dense||compact?9:10} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{windowDollars(w,c,now)}</Text>:null}
+    <Text font={big&&solo?14:big?12:dense||compact?8:9} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{resetTime(w.resetsAt)}</Text>
   </VStack>
 }
 function AccountCard({account:a,config:c,mode,images}:{account:AccountView;config:Config;mode:Layout;images:ProviderImages}) {
   const windows=visibleWindows(a,c)
+  const solo=windows.length===1
   const dense=mode==='largeRows',big=mode==='largeOne',compact=mode==='small'||mode==='mediumTwo'
   const roomy=big||mode==='largeTwo'||mode==='mediumOne'
   const header=<HStack spacing={dense?5:7}>
@@ -39,12 +40,12 @@ function AccountCard({account:a,config:c,mode,images}:{account:AccountView;confi
     <Text font={big?21:dense?12:compact?13:14} fontWeight="semibold" foregroundStyle={foreground} lineLimit={1} minScaleFactor={0.75}>{displayName(a,c.displayNames)}</Text><Spacer/>
     {roomy&&a.provider==='openai'&&a.resetCredits?<Link url={Script.createRunSingleURLScheme(Script.name,{action:'reset',accountID:String(a.id)})}><Text font={10} foregroundStyle={foreground}>重置…</Text></Link>:null}
   </HStack>
-  const meters=windows.length?(dense||mode==='largeTwo'?<HStack alignment="top" spacing={12}>{windows.map((w,i)=><Meter key={String(i)} window={w} config={c} dense={dense}/>)}</HStack>:<VStack spacing={big?20:compact?4:7}>{windows.map((w,i)=><Meter key={String(i)} window={w} config={c} compact={compact} big={big}/>)}</VStack>):<Text font={big?13:10} foregroundStyle={muted} lineLimit={2}>{a.error?'暂时无法读取额度':'暂无额度快照'}</Text>
+  const meters=windows.length?(dense||mode==='largeTwo'?<HStack alignment="top" spacing={12}>{windows.map((w,i)=><Meter key={String(i)} window={w} config={c} dense={dense} solo={solo}/>)}</HStack>:<VStack spacing={big?20:compact?4:7}>{windows.map((w,i)=><Meter key={String(i)} window={w} config={c} compact={compact} big={big} solo={solo}/>)}</VStack>):<Text font={big?13:10} foregroundStyle={muted} lineLimit={2}>{a.error?'暂时无法读取额度':'暂无额度快照'}</Text>
   const status=a.error?'连接异常':a.status!=='active'&&a.status!=='未知'?'账号异常':''
   const credits=a.resetCredits
   const creditLine=credits&&credits.available!==null?<Text font={big?11:9} foregroundStyle={muted} lineLimit={1}>重置券 {credits.available} 次 · 缓存</Text>:null
-  return <VStack alignment="leading" spacing={big?18:dense||compact?4:8} padding={{vertical:dense?4:2}} frame={{maxWidth:'infinity'}}>
-    {mode==='mediumOne'?<HStack alignment="top" spacing={18}><VStack alignment="leading" spacing={10} frame={{maxWidth:'infinity'}}>{header}{creditLine}{status?<Text font={9} foregroundStyle={warning}>{status}</Text>:null}</VStack><VStack frame={{maxWidth:'infinity'}}>{meters}</VStack></HStack>:<VStack alignment="leading" spacing={big?22:dense||compact?4:8}>{header}{meters}{roomy?creditLine:null}{status&&!dense?<Text font={9} foregroundStyle={warning}>{status}</Text>:null}</VStack>}
+  return <VStack alignment="leading" spacing={big?12:dense||compact?3:6} padding={{vertical:compact?0:dense?4:2}} frame={{maxWidth:'infinity'}}>
+    {mode==='mediumOne'&&!solo?<HStack alignment="top" spacing={18}><VStack alignment="leading" spacing={10} frame={{maxWidth:'infinity'}}>{header}{creditLine}{status?<Text font={9} foregroundStyle={warning}>{status}</Text>:null}</VStack><VStack frame={{maxWidth:'infinity'}}>{meters}</VStack></HStack>:<VStack alignment="leading" spacing={big&&solo?24:big?14:dense||compact?3:6}>{header}{meters}{roomy&&!(mode==='mediumOne'&&solo)?creditLine:null}{status&&!dense&&!(compact&&a.error)?<Text font={9} foregroundStyle={warning}>{status}</Text>:null}</VStack>}
   </VStack>
 }
 async function run(){
@@ -76,13 +77,15 @@ async function run(){
   // Official widget samples use the actual host dimensions for full-surface backgrounds.
   // No outer padding or inner card fill: short content must not create a colored strip.
   const view=<VStack spacing={0} frame={Widget.displaySize} widgetBackground={bg}>
-    <VStack alignment="leading" spacing={large?10:4} padding={small?14:12} frame={{maxWidth:'infinity'}}>
+    <VStack alignment="leading" spacing={large?8:2} padding={small?{horizontal:14,vertical:8}:12} frame={{maxWidth:'infinity',maxHeight:'infinity'}}>
     {accounts.length===0?<VStack alignment="leading" spacing={8}><Text font={15} fontWeight="semibold" foregroundStyle={foreground}>连接你的用量</Text><Text font={11} foregroundStyle={muted}>{notice||'打开脚本，配置服务器与账号。'}</Text></VStack>:
       layout==='mediumOne'?<AccountCard images={artwork.images} account={accounts[0]} config={config} mode="mediumOne"/>:
-      large?<VStack spacing={layout==='largeOne'?12:6}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode={layout}/>)}</VStack>:
+      large?<VStack spacing={layout==='largeOne'?10:4}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode={layout}/>)}</VStack>:
       small?<AccountCard images={artwork.images} account={accounts[0]} config={config} mode="small"/>:
       <HStack alignment="top" spacing={10}>{accounts.map(a=><AccountCard images={artwork.images} key={String(a.id)} account={a} config={config} mode="mediumTwo"/>)}</HStack>}
+    <Spacer/>
     {notice&&accounts.length?<Text font={8} foregroundStyle={muted} lineLimit={1}>{notice}</Text>:null}
+    {accounts.length?<Text font={8} foregroundStyle={muted} monospacedDigit lineLimit={1} minScaleFactor={0.75}>{updateFooter(accounts)}</Text>:null}
     </VStack>
   </VStack>
   Widget.present(view,{policy:'after',date:new Date(now+config.refreshMinutes*60_000)})

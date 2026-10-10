@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {pathToFileURL} from 'node:url'
 const dir=await mkdtemp(join(tmpdir(),'sub2api-display-'))
-for(const file of ['model.ts','display.ts'])await writeFile(join(dir,file),(await readFile(new URL('../'+file,import.meta.url),'utf8')).replace("from './model'","from './model.ts'"))
+for(const file of ['model.ts','display.ts','client.ts','state.ts'])await writeFile(join(dir,file),(await readFile(new URL('../'+file,import.meta.url),'utf8')).replace("from './model'","from './model.ts'"))
 const d=await import(pathToFileURL(join(dir,'display.ts'))),m=await import(pathToFileURL(join(dir,'model.ts')))
 test.after(()=>rm(dir,{recursive:true,force:true}))
 const now=Date.parse('2026-10-09T12:00:00Z')
@@ -19,3 +19,33 @@ test('widget source omits removed metadata and fake provider symbols',async()=>{
 test('cache schema reads and writes the exported version; credentials keys unchanged',async()=>{const state=await readFile(new URL('../state.ts',import.meta.url),'utf8');assert.ok(state.includes('value?.version !== CACHE_VERSION'));assert.ok(state.includes('version:CACHE_VERSION,identity'));assert.ok(state.includes("AUTH_KEY = 'sub2api.admin.v1'"));assert.ok(state.includes("CONFIG_KEY = 'sub2api.config.v1'"))})
 
 test('absolute reset time is compact local M/D HH:mm without any label',()=>{const date=new Date(2026,9,16,2,5);assert.equal(d.resetTime(date.toISOString()),'10/16 02:05');for(const at of [null,undefined,'','bad'])assert.equal(d.resetTime(at),'—')})
+
+test('footer uses oldest selected successful read; invalid and empty accounts show unknown',()=>{
+ const first={...a,fetchedAt:'2026-10-09T10:01:00Z'},second={...a,id:2,fetchedAt:'2026-10-09T11:02:00Z'}
+ assert.equal(d.oldestSuccessfulRead([second,first]),first.fetchedAt.replace('00Z','00.000Z'))
+ assert.equal(d.updateFooter([first,second]),`更新于：${d.resetTime(first.fetchedAt)}`)
+ assert.equal(d.updateFooter([second]),`更新于：${d.resetTime(second.fetchedAt)}`)
+ for(const accounts of [[],[first,{...second,fetchedAt:''}],[{...first,fetchedAt:'bad'}]])assert.equal(d.updateFooter(accounts),'更新于：—')
+})
+test('cache roundtrip and all-failed/mixed reads never freshen retained account timestamp',async()=>{
+ const {loadAccounts}=await import(pathToFileURL(join(dir,'client.ts')))
+ const state=await import(pathToFileURL(join(dir,'state.ts')))
+ const c={...m.DEFAULT_CONFIG,demo:false,baseURL:'https://example.org',accountIDs:[1,2]},old='2026-10-08T10:00:00Z'
+ const previous=[1,2].map(id=>m.normalizeAccount({id,name:`Demo ${id}`,platform:'openai',extra:{}},null,{},Date.parse(old)))
+ let stored;globalThis.Storage={get:()=>stored,set:(_key,value)=>{stored=value;return true}}
+ try {
+  for(const mixed of [false,true]){
+   const result=await loadAccounts(c,{kind:'apiKey',token:'TEST'},async url=>{
+    if(!mixed||url.endsWith('/1'))throw Error('offline')
+    return {ok:true,status:200,json:async()=>({code:0,data:{id:2,platform:'openai',extra:{}}})}
+   },previous)
+   assert.equal(result.accounts[0].fetchedAt,previous[0].fetchedAt)
+   assert.equal(d.oldestSuccessfulRead(result.accounts),previous[0].fetchedAt)
+   assert.notEqual(result.fetchedAt,previous[0].fetchedAt)
+   assert.equal(state.saveCache(c,result.accounts,result.fetchedAt),true)
+   const cached=state.readCache(c)
+   assert.equal(d.updateFooter(cached.accounts),`更新于：${d.resetTime(old)}`)
+   if(mixed)assert.notEqual(d.oldestSuccessfulRead([cached.accounts[1]]),previous[1].fetchedAt)
+  }
+ } finally {delete globalThis.Storage}
+})

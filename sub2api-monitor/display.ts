@@ -41,3 +41,15 @@ export function resetTime(at:string|null|undefined):string {
   const pad=(n:number)=>String(n).padStart(2,'0')
   return `${date.getMonth()+1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
+
+/** Oldest successful read among the displayed accounts. Global cache write time can
+ * advance after failures or updates to other accounts, so it is deliberately unused. */
+export function oldestSuccessfulRead(accounts:AccountView[]):string|null {
+  if(!accounts.length)return null
+  const times=accounts.map(a=>a.fetchedAt?Date.parse(a.fetchedAt):NaN)
+  if(times.some(t=>!Number.isFinite(t)))return null
+  return new Date(Math.min(...times)).toISOString()
+}
+export function updateFooter(accounts:AccountView[]):string {
+  return `更新于：${resetTime(oldestSuccessfulRead(accounts))}`
+}
