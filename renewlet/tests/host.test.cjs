@@ -96,6 +96,113 @@ test('all widget families execute, small has home URL, medium/large have detail 
     assert.equal(c.mode, 'demo')
   }
 })
+
+test('a stalled Home Screen request presents the saved snapshot after the deadline without hooks or image requests', async () => {
+  const config = {
+    baseURL: 'https://example.test',
+    mode: 'session',
+    revision: 'widget',
+    days: 30,
+    zone: 'Asia/Shanghai',
+  }
+  const requests = []
+  const h = harness({
+    config,
+    fetcher: (url) => {
+      requests.push(url)
+      return new Promise(() => {})
+    },
+  })
+  const state = h.load('state.ts')
+  state.saveConnection(config, {
+    mode: 'session',
+    session: 's',
+    csrf: 'c',
+    expiresAt: '2099-01-01',
+  })
+  const snapshot = h.load('model.ts').demoSnapshot(config.zone)
+  snapshot.subscriptions[0].logo = 'https://slow-image.test/icon.png'
+  h.data.set('renewlet.snapshot.v1', { ...snapshot, revision: config.revision })
+  let deadline,
+    cleared = false
+  h.globals.setTimeout = (fn, ms) => {
+    assert.equal(ms, 8000)
+    deadline = fn
+    return 7
+  }
+  h.globals.clearTimeout = (id) => {
+    assert.equal(id, 7)
+    cleared = true
+  }
+  h.bridge.useState = () => {
+    throw Error('Widgets must render without state hooks')
+  }
+  h.load('widget.tsx')
+  assert.equal(h.result.view, undefined)
+  deadline()
+  await h.globals.completion
+  assert.ok(h.result.view)
+  assert.equal(cleared, true)
+  assert.equal(requests.length, 1)
+  assert.match(requests[0], /\/api\/app\/subscriptions/)
+  assert.ok(
+    walk(h.result.view).some(
+      (n) => n.type === 'Text' && n.children.join('').includes('旧快照'),
+    ),
+  )
+  assert.equal(
+    walk(h.result.view).some((n) => typeof n.props.onAppear === 'function'),
+    false,
+  )
+})
+
+test('a successful widget sync clears its deadline and does not fetch optional display services', async () => {
+  const config = {
+    baseURL: 'https://example.test',
+    mode: 'session',
+    revision: 'widget',
+    days: 30,
+    zone: 'Asia/Shanghai',
+  }
+  const requests = []
+  const h = harness({
+    config,
+    fetcher: async (url) => {
+      requests.push(url)
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          data: { subscriptions: [], nextCursor: null },
+        }),
+      }
+    },
+  })
+  h.load('state.ts').saveConnection(config, {
+    mode: 'session',
+    session: 's',
+    csrf: 'c',
+    expiresAt: '2099-01-01',
+  })
+  let cleared = false
+  h.globals.setTimeout = () => 9
+  h.globals.clearTimeout = (id) => {
+    assert.equal(id, 9)
+    cleared = true
+  }
+  h.load('widget.tsx')
+  await h.globals.completion
+  assert.ok(h.result.view)
+  assert.equal(requests.length, 1)
+  assert.equal(cleared, true)
+  assert.equal(
+    walk(h.result.view).some(
+      (n) => n.type === 'Text' && n.children.join('').includes('旧快照'),
+    ),
+    false,
+  )
+})
 test('app presents entire subscription list and exits after dismissal; all page modules load', async () => {
   const h = harness()
   h.load('index.tsx')

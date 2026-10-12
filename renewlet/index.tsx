@@ -9,6 +9,7 @@ import {
   Picker,
   Button,
   Script,
+  Widget,
   useState,
 } from 'scripting'
 import {
@@ -62,13 +63,19 @@ export function Dashboard() {
       ) {
         setSnapshot(fresh)
         // Refresh already-mounted rows too, without holding the page's refresh lock.
-        ;[
+        const jobs = [
           loadDisplayData(c),
-          loadLogos(
-            c,
-            sorted(fresh.subscriptions, readSort(), today(c.zone)).slice(0, 40),
-          ),
-        ].forEach((job) =>
+          loadLogos(c, [
+            ...sorted(fresh.subscriptions, readSort(), today(c.zone)).slice(
+              0,
+              40,
+            ),
+            ...upcoming(fresh.subscriptions, today(c.zone), c.days)
+              .slice(0, 6)
+              .map((d) => d.subscription),
+          ]),
+        ]
+        jobs.forEach((job) =>
           job.then(() => {
             if (
               gate.active &&
@@ -78,6 +85,9 @@ export function Dashboard() {
               setSnapshot({ ...fresh })
           }),
         )
+        Promise.all(jobs).then(() => {
+          if (readConfig().revision === c.revision) Widget.reloadAll()
+        })
       }
     } finally {
       if (serial === gate.serial) {

@@ -181,13 +181,52 @@ export function logoRequest(
   // External image services never receive account credentials.
   return { url: logo, headers: {} }
 }
-function restore(c: Config, logo: string): Logo | null {
+export function widgetSVG(svg: string): string | null {
+  if (svg.length > 65536) return null
+  const root = svg.match(/<svg\b([^>]*)>/i)
+  if (!root) return null
+  const viewBox = root[1].match(/\bviewBox\s*=\s*["']([^"']+)["']/i)?.[1]
+  const dimensions = viewBox
+    ?.trim()
+    .split(/[\s,]+/)
+    .map(Number)
+  if (
+    !dimensions ||
+    dimensions.length !== 4 ||
+    !dimensions.every(Number.isFinite) ||
+    dimensions[2] <= 0 ||
+    dimensions[3] <= 0
+  )
+    return null
+  const attrs = root[1].replace(
+    /\s(?:width|height)\s*=\s*(?:"[^"]*"|'[^']*')/gi,
+    '',
+  )
+  return svg.replace(root[0], `<svg${attrs} width="120" height="120">`)
+}
+function restore(c: Config, logo: string, widget = false): Logo | null {
   const k = key(c, logo)
-  if (memory.has(k)) return memory.get(k)!
+  if (!widget && memory.has(k)) return memory.get(k)!
   try {
-    const meta = Storage.get<{ time: number; svg?: string }>(k)
+    const meta = Storage.get<{
+      time: number
+      svg?: string
+      widgetSafe?: boolean
+    }>(k)
     if (!meta) return null
     const svg = meta.svg && safeSVG(meta.svg)
+    if (widget) {
+      if (svg) {
+        const bounded = widgetSVG(svg)
+        return bounded ? { svg: bounded } : null
+      }
+      // Never decode old/oversized originals just to discover their dimensions.
+      if (!meta.widgetSafe) return null
+      const data = Storage.getData(k + '.data')
+      if (!data || data.size > 131072) return null
+      const image = UIImage.fromData(data)
+      return image ? { image } : null
+    }
     const data = !svg ? Storage.getData(k + '.data') : null
     const image = data ? UIImage.fromData(data) : null
     const value = svg ? { svg } : image ? { image } : null
@@ -197,14 +236,18 @@ function restore(c: Config, logo: string): Logo | null {
     return null
   }
 }
-export function readLogo(c: Config, s: Subscription): Logo | null {
+export function readLogo(
+  c: Config,
+  s: Subscription,
+  widget = false,
+): Logo | null {
   if (c.mode === 'demo') {
     const svg = demoIcon(s.id)
     return svg ? { svg } : null
   }
   // A known dark PNG avoids white-on-white variants and device SVG differences.
   if (isOpenAI(s)) return brandLogo()
-  return s.logo ? restore(c, s.logo) : null
+  return s.logo ? restore(c, s.logo, widget) : null
 }
 export function logoBackground(logo: Logo): string {
   // Mid-tone backing keeps both white and dark transparent raster artwork visible.
@@ -236,7 +279,15 @@ function remember(k: string, logo: Logo): boolean {
     const data = logo.image.toPNGData()
     if (!data) return false
     Storage.setData(k + '.data', data)
-    if (!Storage.set(k, { time: Date.now() })) return false
+    const widgetSafe =
+      Number.isFinite(logo.image.width) &&
+      Number.isFinite(logo.image.height) &&
+      logo.image.width > 0 &&
+      logo.image.height > 0 &&
+      logo.image.width <= 256 &&
+      logo.image.height <= 256 &&
+      data.size <= 131072
+    if (!Storage.set(k, { time: Date.now(), widgetSafe })) return false
   }
   return Storage.set(INDEX, next)
 }
@@ -258,9 +309,16 @@ async function load(
     }
   if (!s.logo) return { ok: false, message: '未配置图标' }
   const k = key(c, s.logo),
-    meta = Storage.get<{ time: number }>(k)
-  if (!force && restore(c, s.logo) && meta && Date.now() - meta.time < TTL)
+    meta = Storage.get<{ time: number; widgetSafe?: boolean }>(k)
+  const cached = restore(c, s.logo)
+  if (!force && cached && meta && Date.now() - meta.time < TTL) {
+    if ('image' in cached && meta.widgetSafe === undefined) {
+      try {
+        remember(k, cached)
+      } catch {}
+    }
     return { ok: true, message: '已有本机缓存' }
+  }
   if (pending.has(k)) {
     if (!force) return pending.get(k)!
     await pending.get(k)

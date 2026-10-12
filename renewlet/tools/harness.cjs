@@ -79,6 +79,8 @@ function harness({
       fromData: (data) =>
         data?.raster
           ? {
+              width: 120,
+              height: 120,
               preparingThumbnail() {
                 return this
               },
@@ -121,6 +123,8 @@ function harness({
     URL,
     Intl,
     console,
+    setTimeout,
+    clearTimeout,
     Storage: {
       get: (k) => data.get(k) ?? null,
       set: (k, v) => {

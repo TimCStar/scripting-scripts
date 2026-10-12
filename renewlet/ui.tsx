@@ -66,10 +66,34 @@ export function SubscriptionIcon({
     await loadLogos(config, [s])
     if (readConfig().revision === config.revision) setVersion((v) => v + 1)
   }
+  return <IconContent s={s} size={size} logo={logo} onAppear={appear} />
+}
+export function WidgetIcon({
+  s,
+  size = 36,
+}: {
+  s: Subscription
+  size?: number
+}) {
+  return (
+    <IconContent s={s} size={size} logo={readLogo(readConfig(), s, true)} />
+  )
+}
+function IconContent({
+  s,
+  size,
+  logo,
+  onAppear,
+}: {
+  s: Subscription
+  size: number
+  logo: ReturnType<typeof readLogo>
+  onAppear?: () => Promise<void>
+}) {
   if (logo)
     return (
       <VStack
-        onAppear={appear}
+        onAppear={onAppear}
         frame={{ width: size, height: size }}
         background={logoBackground(logo)}
         clipShape={{ type: 'rect', cornerRadius: size * 0.25 }}
@@ -95,7 +119,7 @@ export function SubscriptionIcon({
     )
   return (
     <Text
-      onAppear={appear}
+      onAppear={onAppear}
       font={size * 0.44}
       fontWeight="semibold"
       foregroundStyle={palette.accent}
@@ -137,36 +161,52 @@ export function SubscriptionPrice({
   font = 14,
   compact = false,
   alignment = 'leading',
+  inline = false,
 }: {
   s: Subscription
   font?: number
   compact?: boolean
   alignment?: 'leading' | 'trailing'
+  inline?: boolean
 }) {
   const converted = cnyLabel(s, readRates(readConfig()))
-  return (
+  const price = (
+    <Text
+      font={font}
+      fontWeight="medium"
+      foregroundStyle={palette.ink}
+      monospacedDigit
+      lineLimit={1}
+      minScaleFactor={0.65}
+    >
+      {priceLabel(s)}
+    </Text>
+  )
+  const reference = converted ? (
+    <Text
+      font={compact ? 9 : 10}
+      foregroundStyle={palette.muted}
+      monospacedDigit
+      lineLimit={1}
+      minScaleFactor={0.65}
+    >
+      {converted}
+    </Text>
+  ) : null
+  return inline ? (
+    <HStack
+      spacing={4}
+      frame={{ maxWidth: 'infinity', alignment: 'leading' }}
+      alignment="firstTextBaseline"
+    >
+      {price}
+      {reference ? <Spacer /> : null}
+      {reference}
+    </HStack>
+  ) : (
     <VStack alignment={alignment} spacing={compact ? 2 : 3}>
-      <Text
-        font={font}
-        fontWeight="medium"
-        foregroundStyle={palette.ink}
-        monospacedDigit
-        lineLimit={1}
-        minScaleFactor={0.65}
-      >
-        {priceLabel(s)}
-      </Text>
-      {converted ? (
-        <Text
-          font={compact ? 9 : 10}
-          foregroundStyle={palette.muted}
-          monospacedDigit
-          lineLimit={1}
-          minScaleFactor={0.65}
-        >
-          {converted}
-        </Text>
-      ) : null}
+      {price}
+      {reference}
     </VStack>
   )
 }
@@ -174,10 +214,14 @@ export function SubscriptionRow({
   s,
   date,
   dense = false,
+  widget = false,
+  iconSize,
 }: {
   s: Subscription
   date: string
   dense?: boolean
+  widget?: boolean
+  iconSize?: number
 }) {
   const d = dueFor(s, date)
   return (
@@ -186,7 +230,11 @@ export function SubscriptionRow({
       padding={{ vertical: dense ? 0 : 8 }}
       frame={{ maxWidth: 'infinity', alignment: 'leading' }}
     >
-      <SubscriptionIcon s={s} size={dense ? 28 : 42} />
+      {widget ? (
+        <WidgetIcon s={s} size={iconSize || 28} />
+      ) : (
+        <SubscriptionIcon s={s} size={dense ? 28 : 42} />
+      )}
       <VStack
         alignment="leading"
         spacing={dense ? 3 : 5}

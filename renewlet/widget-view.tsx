@@ -12,7 +12,7 @@ import {
 import {
   palette,
   SubscriptionRow,
-  SubscriptionIcon,
+  WidgetIcon,
   SubscriptionPrice,
   Note,
   tone,
@@ -47,6 +47,12 @@ export function WidgetView({
   const all = upcoming(snapshot.subscriptions, date, config.days)
   const rows = all.slice(0, widgetLimit(family, height)),
     next = rows[0]
+  const mediumRowHeight = Math.max(
+    28,
+    Math.floor(
+      (height - 56 - 4 * (rows.length - 1)) / Math.max(1, rows.length),
+    ),
+  )
   const home = Script.createRunURLScheme(Script.name)
   const overdue = snapshot.subscriptions.filter(
     (s) => (dueFor(s, date)?.days ?? 0) < 0,
@@ -60,7 +66,7 @@ export function WidgetView({
       <VStack
         alignment="leading"
         spacing={small ? 6 : 5}
-        padding={{ horizontal: small ? 12 : 14, vertical: small ? 10 : 12 }}
+        padding={{ horizontal: small ? 12 : 14, vertical: large ? 12 : 10 }}
         frame={{
           maxWidth: 'infinity',
           maxHeight: 'infinity',
@@ -125,7 +131,7 @@ export function WidgetView({
             }}
           >
             <HStack spacing={7}>
-              <SubscriptionIcon s={next.subscription} size={36} />
+              <WidgetIcon s={next.subscription} size={36} />
               <VStack
                 alignment="leading"
                 spacing={3}
@@ -173,7 +179,7 @@ export function WidgetView({
                 </Text>
               </VStack>
             </HStack>
-            <SubscriptionPrice s={next.subscription} font={13} compact />
+            <SubscriptionPrice s={next.subscription} font={13} compact inline />
           </VStack>
         ) : (
           <VStack
@@ -223,16 +229,22 @@ export function WidgetView({
                   alignment="leading"
                   frame={{
                     maxWidth: 'infinity',
-                    minHeight: large ? 34 : 29,
-                    maxHeight: large ? 34 : 29,
+                    minHeight: large ? 34 : mediumRowHeight,
+                    maxHeight: large ? 34 : mediumRowHeight,
                     alignment: 'leading',
                   }}
                 >
-                  <SubscriptionRow s={d.subscription} date={date} dense />
+                  <SubscriptionRow
+                    s={d.subscription}
+                    date={date}
+                    dense
+                    widget
+                    iconSize={large ? 28 : Math.min(34, mediumRowHeight - 2)}
+                  />
                 </VStack>
               </Link>
             ))}
-            <Spacer />
+            {large ? <Spacer /> : null}
             {large && overdue ? (
               <Link url={home}>
                 <Text font={10} foregroundStyle={palette.red}>

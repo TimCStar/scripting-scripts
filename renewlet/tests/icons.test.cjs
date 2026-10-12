@@ -593,3 +593,57 @@ test('ChatGPT always uses the bundled dark PNG without external requests; transp
   assert.equal(png.readUInt32BE(16), 120)
   assert.equal(png.readUInt32BE(20), 120)
 })
+
+test('widgets decode only compact verified image caches, while oversized originals remain usable in the app', async () => {
+  for (const large of [false, true]) {
+    let decodes = 0
+    const h = harness({
+      config: c,
+      fetcher: async () => response('binary', 'image/png'),
+    })
+    h.bridge.UIImage.fromData = () => {
+      decodes++
+      return {
+        width: large ? 8000 : 120,
+        height: large ? 8000 : 120,
+        preparingThumbnail() {
+          throw Error('unavailable')
+        },
+        toPNGData: () => data('png', true),
+      }
+    }
+    const i = h.load('icons.ts'),
+      s = sub(h, 'https://cdn.test/a')
+    await i.prepareLogos(c, [s], auth)
+    const before = decodes
+    const logo = i.readLogo(c, s, true)
+    assert.equal(!!logo, !large)
+    assert.equal(decodes, before + (large ? 0 : 1))
+    assert.ok(i.readLogo(c, s))
+  }
+})
+
+test('widget vectors have bounded raster dimensions and unsafe legacy raster caches are not decoded', () => {
+  const h = harness({ config: c }),
+    i = h.load('icons.ts'),
+    s = sub(h, 'https://cdn.test/a')
+  const bounded = i.widgetSVG(
+    '<svg width="20000" height="20000" viewBox="0 0 24 24"><path/></svg>',
+  )
+  assert.match(bounded, /width="120" height="120"/)
+  assert.doesNotMatch(bounded, /20000/)
+  assert.equal(i.widgetSVG('<svg viewBox="0 0 0 5"/>'), null)
+  assert.equal(
+    i.widgetSVG('<svg viewBox="0 0 24 24">' + ' '.repeat(65536) + '</svg>'),
+    null,
+  )
+  const key =
+    'renewlet.logo.v1.' +
+    encodeURIComponent(JSON.stringify([c.baseURL, c.mode, c.revision, s.logo]))
+  h.data.set(key, { time: Date.now() })
+  h.data.set(key + '.data', data('png', true))
+  h.bridge.UIImage.fromData = () => {
+    throw Error('Must not decode unverified legacy cache')
+  }
+  assert.equal(i.readLogo(c, s, true), null)
+})

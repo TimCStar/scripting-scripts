@@ -1,10 +1,39 @@
 import { Widget } from 'scripting'
-import { today, upcoming, type Family } from './model'
-import { readConfig, refresh, loadLogos, loadDisplayData } from './state'
-import { WidgetView, widgetLimit } from './widget-view'
+import { today, type Family, type Snapshot } from './model'
+import { readConfig, refresh, initial } from './state'
+import { WidgetView } from './widget-view'
+export async function widgetSnapshot(): Promise<Snapshot> {
+  const config = readConfig(),
+    cached = initial(config)
+  if (config.mode === 'demo') return cached
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    // The Home Screen extension must reach present even if a native request stalls.
+    return await Promise.race([
+      refresh(config),
+      new Promise<Snapshot>((resolve) => {
+        timer = setTimeout(
+          () =>
+            resolve({
+              ...cached,
+              cached: true,
+              notice: cached.fetchedAt
+                ? '同步超时，显示上次数据'
+                : '请先打开脚本同步订阅',
+            }),
+          8000,
+        )
+      }),
+    ])
+  } catch {
+    return { ...cached, cached: true, notice: '请打开脚本检查连接' }
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
 async function run() {
   const config = readConfig(),
-    snapshot = await refresh(config),
+    snapshot = await widgetSnapshot(),
     size = Widget.displaySize
   const family: Family =
     Widget.family === 'systemSmall'
@@ -13,15 +42,8 @@ async function run() {
         ? 'systemLarge'
         : 'systemMedium'
   const date = today(config.zone)
-  await Promise.all([
-    loadDisplayData(config),
-    loadLogos(
-      config,
-      upcoming(snapshot.subscriptions, date, config.days)
-        .slice(0, widgetLimit(family, size.height))
-        .map((d) => d.subscription),
-    ),
-  ])
+  // Icons, exchange rates and categories use the cache warmed by the main app.
+  // No image downloads/decoding of full-size originals in the widget extension.
   Widget.present(
     <WidgetView
       snapshot={snapshot}

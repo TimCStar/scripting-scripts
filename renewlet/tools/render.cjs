@@ -47,6 +47,8 @@ function css(p, mode, parent) {
   if (f.alignment === 'center') s.push('justify-content:center')
   if (f.alignment === 'leading' || f.alignment === 'topLeading')
     s.push('align-items:flex-start;text-align:left')
+  if (f.alignment === 'leading' && f.minHeight && f.minHeight === f.maxHeight)
+    s.push('justify-content:center')
   if (f.alignment === 'topLeading') s.push('justify-content:flex-start')
   if (p.padding) {
     const q = p.padding
