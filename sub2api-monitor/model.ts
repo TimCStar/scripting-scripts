@@ -1,10 +1,10 @@
 /** Pure data layer. Never retain server objects or credentials in a model/cache. */
 export type Provider = 'openai' | 'anthropic' | 'antigravity' | 'other'
-export type Window = { label: string; percent: number | null; resetsAt: string | null; updatedAt: string | null; detail?: string; usedUSD?: number | null; estimatedTotalUSD?: number | null; costStatus?: 'complete' | 'unavailable' | 'truncated' }
+export type Window = { label: string; percent: number | null; resetsAt: string | null; updatedAt: string | null; detail?: string; usedUSD?: number | null; estimatedTotalUSD?: number | null; costStatus?: 'complete' | 'unavailable' | 'truncated'; costUpdatedAt?: string; costSampledAt?: string; costPercent?: number | null; costFallback?: boolean; costIssue?: 'request' | 'invalid' | 'window' }
 export type AccountView = {
   id: number; name: string; provider: Provider; groups: string[]; status: string;
   windows: Window[]; todayCost: number | null; todayTokens: number | null; todayRequests?: number | null;
-  todayDate?: string; todayTimeZone?: string; todayUpdatedAt?: string;
+  todayDate?: string; todayTimeZone?: string; todayUpdatedAt?: string; todayFallback?: boolean; todayIssue?: 'request' | 'invalid' | 'day' | 'timezone';
   resetCredits?: {available:number|null;expiresAt:string|null;automatic:boolean|null;state:string|null;stateAt:string|null};
   estimate: string; fetchedAt: string; readStartedAt?: string; requestErrors?: string[]; error?: string
 }
@@ -167,8 +167,8 @@ export function validateCachedAccount(value:unknown):AccountView|null {
   const a=record(value)
   if(!Number.isSafeInteger(a.id)||Number(a.id)<=0||!['openai','anthropic','antigravity','other'].includes(String(a.provider))||!Array.isArray(a.windows)||!Array.isArray(a.groups))return null
   const windows:Window[]=[]
-  for(const entry of a.windows.slice(0,3)){const w=record(entry);if(typeof w.label!=='string'||(w.percent!==null&&nonnegative(w.percent)===null))return null;windows.push({label:safeText(w.label,'?',10),percent:nonnegative(w.percent),resetsAt:iso(w.resetsAt),updatedAt:iso(w.updatedAt),...(w.costStatus==='complete'?{usedUSD:nonnegative(w.usedUSD),estimatedTotalUSD:nonnegative(w.estimatedTotalUSD),costStatus:'complete' as const}:w.costStatus==='truncated'||w.costStatus==='unavailable'?{usedUSD:null,estimatedTotalUSD:null,costStatus:w.costStatus}:{} )})}
-  return {id:Number(a.id),name:safeText(a.name,'未命名账号',40),provider:a.provider as Provider,groups:a.groups.map(x=>safeText(x,'',30)).filter(Boolean).slice(0,3),status:safeText(a.status,'未知',20),windows,todayCost:nonnegative(a.todayCost),...(typeof a.todayDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(a.todayDate)&&typeof a.todayTimeZone==='string'&&a.todayTimeZone.length<=100&&iso(a.todayUpdatedAt)?{todayDate:a.todayDate,todayTimeZone:a.todayTimeZone,todayUpdatedAt:iso(a.todayUpdatedAt)!}:{}),todayTokens:nonnegative(a.todayTokens),todayRequests:nonnegative(a.todayRequests),...(a.provider==='openai'&&a.resetCredits?{resetCredits:{available:nonnegative(record(a.resetCredits).available),expiresAt:iso(record(a.resetCredits).expiresAt),automatic:typeof record(a.resetCredits).automatic==='boolean'?record(a.resetCredits).automatic as boolean:null,state:typeof record(a.resetCredits).state==='string'?safeText(record(a.resetCredits).state,'',10):null,stateAt:iso(record(a.resetCredits).stateAt)}}:{}),estimate:safeText(a.estimate,'额度未提供'),fetchedAt:iso(a.fetchedAt)||'',...(iso(a.readStartedAt)?{readStartedAt:iso(a.readStartedAt)!}:{}),...(Array.isArray(a.requestErrors)?{requestErrors:a.requestErrors.filter((x):x is string=>typeof x==='string').slice(0,4).map(x=>{const match=/^(账号|7d 边界记录|用量统计)：(.*)$/.exec(x);return match?`${match[1]}：${safeRequestError(new Error(match[2]))}`:'请求失败'})}:{}),...(typeof a.error==='string'?{error:safeRequestError(new Error(a.error))}:{} )}
+  for(const entry of a.windows.slice(0,3)){const w=record(entry);if(typeof w.label!=='string'||(w.percent!==null&&nonnegative(w.percent)===null))return null;windows.push({label:safeText(w.label,'?',10),percent:nonnegative(w.percent),resetsAt:iso(w.resetsAt),updatedAt:iso(w.updatedAt),...(w.costStatus==='complete'?{usedUSD:nonnegative(w.usedUSD),estimatedTotalUSD:w.costSampledAt!==undefined&&!iso(w.costSampledAt)?null:nonnegative(w.estimatedTotalUSD),costStatus:'complete' as const,...(iso(w.costUpdatedAt)?{costUpdatedAt:iso(w.costUpdatedAt)!}:{}),...(iso(w.costSampledAt)?{costSampledAt:iso(w.costSampledAt)!}:{}),...(w.costPercent!==undefined?{costPercent:nonnegative(w.costPercent)}:{}),...(w.costFallback===true?{costFallback:true}:{})}:w.costStatus==='truncated'||w.costStatus==='unavailable'?{usedUSD:null,estimatedTotalUSD:null,costStatus:w.costStatus}:{} ),...(['request','invalid','window'].includes(String(w.costIssue))?{costIssue:w.costIssue as Window['costIssue']}:{})})}
+  return {id:Number(a.id),name:safeText(a.name,'未命名账号',40),provider:a.provider as Provider,groups:a.groups.map(x=>safeText(x,'',30)).filter(Boolean).slice(0,3),status:safeText(a.status,'未知',20),windows,todayCost:nonnegative(a.todayCost),...(typeof a.todayDate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(a.todayDate)&&typeof a.todayTimeZone==='string'&&a.todayTimeZone.length<=100&&iso(a.todayUpdatedAt)?{todayDate:a.todayDate,todayTimeZone:a.todayTimeZone,todayUpdatedAt:iso(a.todayUpdatedAt)!}:{}),...(a.todayFallback===true?{todayFallback:true}:{}),...(['request','invalid','day','timezone'].includes(String(a.todayIssue))?{todayIssue:a.todayIssue as AccountView['todayIssue']}:{}),todayTokens:nonnegative(a.todayTokens),todayRequests:nonnegative(a.todayRequests),...(a.provider==='openai'&&a.resetCredits?{resetCredits:{available:nonnegative(record(a.resetCredits).available),expiresAt:iso(record(a.resetCredits).expiresAt),automatic:typeof record(a.resetCredits).automatic==='boolean'?record(a.resetCredits).automatic as boolean:null,state:typeof record(a.resetCredits).state==='string'?safeText(record(a.resetCredits).state,'',10):null,stateAt:iso(record(a.resetCredits).stateAt)}}:{}),estimate:safeText(a.estimate,'额度未提供'),fetchedAt:iso(a.fetchedAt)||'',...(iso(a.readStartedAt)?{readStartedAt:iso(a.readStartedAt)!}:{}),...(Array.isArray(a.requestErrors)?{requestErrors:a.requestErrors.filter((x):x is string=>typeof x==='string').slice(0,4).map(x=>{const match=/^(账号|7d 边界记录|用量统计)：(.*)$/.exec(x);return match?`${match[1]}：${safeRequestError(new Error(match[2]))}`:'请求失败'})}:{}),...(typeof a.error==='string'?{error:safeRequestError(new Error(a.error))}:{} )}
 }
 
 export type Layout = 'small' | 'mediumOne' | 'mediumTwo' | 'largeOne' | 'largeTwo' | 'largeRows'
@@ -235,4 +235,35 @@ export function safeRequestError(error:unknown):string {
   if(/^服务器暂不可用（[1-5][0-9]{2}）$/.test(message))return message
   if(error instanceof Error&&error.name==='TimeoutError'||/timeout|timed\s*out|超时/i.test(message))return '网络请求超时'
   return '网络连接失败'
+}
+
+/** Validate the identity of a weekly sample, not how many minutes it has aged. */
+export function validWeeklySample(window:Window,now=Date.now()):boolean {
+ const start=sevenDayCostStart(window,now),sample=Date.parse((window.costFallback?window.costSampledAt:window.costSampledAt??window.updatedAt)??'')
+ if(window.costFallback&&(!iso(window.costUpdatedAt)||nonnegative(window.costPercent)===null||window.costPercent===0))return false
+ return start!==null&&Number.isFinite(sample)&&sample>=start&&sample<=now+300_000&&sample<Date.parse(window.resetsAt!)
+}
+/** A daily amount is tied to one exact local calendar day and IANA timezone. */
+export function validToday(account:AccountView,now=Date.now(),timeZone?:string):boolean {
+ const day=localDay(now,timeZone),sample=Date.parse(account.todayUpdatedAt||'')
+ return !!day&&account.todayDate===day.date&&account.todayTimeZone===day.timeZone&&Number.isFinite(sample)&&sample<=now&&localDay(sample,day.timeZone)?.date===day.date&&nonnegative(account.todayCost)!==null
+}
+
+/** Reuse only verified amounts after a failed request. Never mix new percentage
+ * samples into an old monetary estimate or carry yesterday/another window over. */
+export function retainFailedAmounts(account:AccountView,previous:AccountView|undefined,now=Date.now(),timeZone?:string):void {
+ if(!previous||previous.id!==account.id||previous.provider!==account.provider)return
+ if(account.todayIssue==='request'&&validToday(previous,now,timeZone)) {
+  account.todayCost=previous.todayCost;account.todayDate=previous.todayDate;account.todayTimeZone=previous.todayTimeZone
+  account.todayUpdatedAt=previous.todayUpdatedAt;account.todayFallback=true
+ }
+ for(const window of account.windows) {
+  if(window.costIssue!=='request'||sevenDayCostStart(window,now)===null)continue
+  const old=previous.windows.find(w=>w.label===window.label&&w.resetsAt===window.resetsAt)
+  const read=Date.parse(old?.costUpdatedAt??'')
+  if(!old||old.costStatus!=='complete'||nonnegative(old.usedUSD)===null||!Number.isFinite(read)||read>now||read<sevenDayCostStart(window,now)!)continue
+  window.usedUSD=old.usedUSD;window.estimatedTotalUSD=old.estimatedTotalUSD;window.costStatus='complete'
+  window.costUpdatedAt=old.costUpdatedAt;window.costSampledAt=old.costFallback?old.costSampledAt:old.costSampledAt??old.updatedAt??undefined
+  window.costPercent=old.costPercent===undefined&&!old.costFallback?old.percent:old.costPercent;window.costFallback=true
+ }
 }

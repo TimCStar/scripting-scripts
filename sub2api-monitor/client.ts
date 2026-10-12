@@ -1,4 +1,4 @@
-import { safeRequestError, normalizeAccount, localDay, nonnegative, estimatedTotalCost, sevenDayCostStart, accountLogCost, isStale, type Window, type AccountView, type Config } from './model'
+import { safeRequestError, normalizeAccount, localDay, nonnegative, estimatedTotalCost, sevenDayCostStart, accountLogCost, validWeeklySample, retainFailedAmounts, type Window, type AccountView, type Config } from './model'
 export type FetchLike = (url: string, options: {method:string;headers:Record<string,string>;timeout:number;handleRedirect:()=>Promise<null>}) => Promise<{ok:boolean;status:number;json:()=>Promise<unknown>}>
 export type Auth = { kind: 'apiKey' | 'jwt'; token: string }
 export type LoadResult = { accounts: AccountView[]; fetchedAt: string; errors: Record<string,string> }
@@ -41,6 +41,7 @@ export async function loadAccounts(config: Config, auth: Auth, fetcher: FetchLik
         if(weekly) await attachSevenDayCost(weekly,id,accountGet,config.staleMinutes)
       }
       await attachTodayCost(account,accountGet)
+      retainFailedAmounts(account,previous.find(a=>a.id===id))
       if(requestErrors.length){account.requestErrors=requestErrors;errors[String(id)]=requestErrors.join("；")}
       return account
     } catch (error) {
@@ -60,10 +61,11 @@ const DAY=86400000, PAGE_SIZE=500, MAX_PAGES=4
  * Pagination has no transaction snapshot: reject changed totals/duplicate IDs.
  */
 export async function attachSevenDayCost(window:Window,id:number,get:(path:string)=>Promise<unknown>,staleMinutes:number,now=Date.now()):Promise<void> {
-  window.usedUSD=null;window.estimatedTotalUSD=null;window.costStatus='unavailable'
+  window.usedUSD=null;window.estimatedTotalUSD=null;window.costStatus='unavailable';window.costIssue='invalid'
+  delete window.costUpdatedAt;delete window.costSampledAt;delete window.costPercent;delete window.costFallback
   const wallStart=Date.now()
   const start=sevenDayCostStart(window,now)
-  if(start===null)return
+  if(start===null){window.costIssue='window';return}
   const dayStart=Math.floor(start/DAY)*DAY, wholeStart=start===dayStart?dayStart:dayStart+DAY
   const date=(t:number)=>new Date(t).toISOString().slice(0,10)
   let cost=0
@@ -96,22 +98,26 @@ export async function attachSevenDayCost(window:Window,id:number,get:(path:strin
         if(page===MAX_PAGES){window.costStatus='truncated';return}
       }
     }
-    if(!Number.isFinite(cost)||now+(Date.now()-wallStart)>=Date.parse(window.resetsAt!))return
+    const finished=now+(Date.now()-wallStart)
+    if(!Number.isFinite(cost)||finished<now||finished>=Date.parse(window.resetsAt!)){window.costIssue='window';return}
     window.usedUSD=cost
-    window.estimatedTotalUSD=isStale(window.updatedAt,staleMinutes,now)?null:estimatedTotalCost(cost,window.percent)
-    window.costStatus='complete'
-  }catch { /* Keep other account metrics and omit unverified quota dollars. */ }
+    window.costUpdatedAt=new Date(finished).toISOString()
+    window.costSampledAt=window.updatedAt??undefined;window.costPercent=window.percent
+    window.estimatedTotalUSD=validWeeklySample(window,finished)?estimatedTotalCost(cost,window.percent):null
+    window.costStatus='complete';delete window.costIssue
+  }catch {window.costIssue='request'}
 }
 
 /** Today uses local recorded account cost, never provider probes or user-billed cost. */
 export async function attachTodayCost(account:AccountView,get:(path:string)=>Promise<unknown>,now=Date.now(),timeZone?:string):Promise<void> {
-  account.todayCost=null;delete account.todayDate;delete account.todayTimeZone;delete account.todayUpdatedAt
+  account.todayCost=null;delete account.todayDate;delete account.todayTimeZone;delete account.todayUpdatedAt;delete account.todayFallback;account.todayIssue='invalid'
   const day=localDay(now,timeZone),wallStart=Date.now()
-  if(!day)return
+  if(!day){account.todayIssue='timezone';return}
   try {
     const stats=object(await get(`usage/stats?account_id=${account.id}&start_date=${day.date}&end_date=${day.date}&timezone=${encodeURIComponent(day.timeZone)}&nocache=true`))
     const cost=nonnegative(stats.total_account_cost),finished=now+(Date.now()-wallStart)
-    if(cost===null||localDay(finished,day.timeZone)?.date!==day.date)return
-    account.todayCost=cost;account.todayDate=day.date;account.todayTimeZone=day.timeZone;account.todayUpdatedAt=new Date(finished).toISOString()
-  }catch { /* A failed statistic is unknown, not zero or a new timestamp on old cost. */ }
+    if(finished<now||localDay(finished,day.timeZone)?.date!==day.date){account.todayIssue='day';return}
+    if(cost===null)return
+    account.todayCost=cost;account.todayDate=day.date;account.todayTimeZone=day.timeZone;account.todayUpdatedAt=new Date(finished).toISOString();delete account.todayIssue
+  }catch {account.todayIssue='request'}
 }

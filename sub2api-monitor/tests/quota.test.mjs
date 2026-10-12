@@ -25,10 +25,10 @@ test('midnight reset start uses one aggregate request without boundary duplicati
  await attachSevenDayCost(w,1,async path=>{calls.push(path);return {total_account_cost:11}},60,now)
  assert.equal(calls.length,1);assert.ok(calls[0].includes('start_date=2026-10-05'));assert.equal(w.usedUSD,11)
 })
-test('stale ratio retains exact used accounting cost but suppresses estimate',async()=>{
+test('aged current-window ratio retains both cost and estimate',async()=>{
  const w={...window(),updatedAt:'2026-10-09T09:00:00Z'}
  await attachSevenDayCost(w,1,async path=>path.startsWith('usage/stats')?{total_account_cost:12}:page([]),60,now)
- assert.equal(w.usedUSD,12);assert.equal(w.estimatedTotalUSD,null)
+ assert.equal(w.usedUSD,12);assert.equal(w.estimatedTotalUSD,48)
 })
 test('expired or unknown reset never silently becomes rolling week',async()=>{
  for(const reset of [null,'2026-10-08T00:00:00Z']){let calls=0;const w={...window(),resetsAt:reset};await attachSevenDayCost(w,1,async()=>{calls++;return{}},60,now);assert.equal(calls,0);assert.equal(w.usedUSD,null)}

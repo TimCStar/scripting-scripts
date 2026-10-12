@@ -40,7 +40,7 @@ export function refreshMonitor(selection:RefreshSelection,fetcher:FetchLike):Pro
       const accounts=selection.accountIDs.map(id=>committed.accounts.find(a=>a.id===id)).filter((a):a is AccountView=>!!a)
       const failed=Object.keys(result.errors).length
       const allAccountReadsFailed=result.accounts.every(a=>!!a.error)
-      const fallback=result.accounts.some(a=>a.error&&a.fetchedAt)
+      const fallback=accounts.some(a=>a.error&&a.fetchedAt||a.todayFallback||a.windows.some(w=>w.costFallback))
       const notice=failed?(allAccountReadsFailed?'请求失败':'部分请求失败')+(fallback?' · 旧快照':allAccountReadsFailed?' · 暂无可用数据':' · 部分用量未知'):''
       return {status:!committed.saved||allAccountReadsFailed?'failed':failed?'partial':'ok',notice:!committed.saved?'缓存保存失败'+(notice?'；'+notice:''):notice,accounts}
     }catch{return failure('无法读取凭证或服务器')}

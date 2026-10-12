@@ -74,7 +74,7 @@ function Setup() {
     </Section>
     <ConnectionPanel key={String(panelRevision)}/>
     <ResetPanel/>
-    <Section header={<Text>预览 · v1.2.2</Text>}>
+    <Section header={<Text>预览 · v1.2.3</Text>}>
       <HStack spacing={16}>{(['openai','anthropic','antigravity'] as const).map(provider=><ProviderIcon key={provider} provider={provider} size={28} images={artwork.images}/>)}</HStack>
       <Text>{artwork.failed.length?'图标解码失败：'+artwork.failed.join('、')+'。请更新 Scripting 后重试。':'离线图标已解码。上方应显示 3 个真实平台标志。'}</Text>
       <Button title="小号 · 单账号" action={()=>preview('systemSmall')}/>

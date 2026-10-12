@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG, CACHE_VERSION, validateConfig, validateCachedAccount, iso, type Config, type AccountView } from './model'
+import { DEFAULT_CONFIG, CACHE_VERSION, validateConfig, validateCachedAccount, retainFailedAmounts, iso, type Config, type AccountView } from './model'
 export const CONFIG_KEY = 'sub2api.config.v1'
 export const AUTH_KEY = 'sub2api.admin.v1'
 export const CACHE_KEY = 'sub2api.cache.v1'
@@ -21,7 +21,7 @@ export function commitCache(config:Config,updates:AccountView[],fetchedAt:string
     const a=validateCachedAccount(item)
     if(!a||!config.accountIDs.includes(a.id))continue
     const prior=byID.get(a.id)
-    if(!prior||readOrder(a)>=readOrder(prior))byID.set(a.id,a)
+    if(!prior||readOrder(a)>=readOrder(prior)){retainFailedAmounts(a,prior);byID.set(a.id,a)}
   }
   const accounts=[...byID.values()]
   try { return {saved:Storage.set(CACHE_KEY,{version:CACHE_VERSION,identity:identity(config),accounts,fetchedAt:iso(fetchedAt)||new Date().toISOString()}),accounts} } catch { return {saved:false,accounts} }

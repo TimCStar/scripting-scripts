@@ -132,7 +132,7 @@ test('stats-only request failure produces partial outcome and recovery clears pe
  const f=fixture()
  const partial=await refreshMonitor(f.request,async(url,init)=>url.includes('/usage/stats')?{ok:false,status:503,json:async()=>({error:'NEVER_EXPOSE'})}:f.fetcher(url,init))
  assert.equal(partial.status,'partial');assert.match(partial.notice,/部分请求失败/)
- assert.ok(!partial.notice.includes('旧快照'))
+ assert.ok(partial.notice.includes('旧快照'));assert.equal(partial.accounts[0].todayFallback,true)
  assert.equal(partial.accounts[0].error,undefined)
  assert.ok(partial.accounts[0].requestErrors.some(reason=>reason.includes('服务器暂不可用（503）')))
  assert.ok(!JSON.stringify(partial).includes('NEVER_EXPOSE'))

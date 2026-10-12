@@ -29,19 +29,19 @@ test('zero is measured zero; missing malformed and failed today stats clear old 
 test('invalid timezone means no guessed request',async()=>{
  const a=account();let calls=0;await c.attachTodayCost(a,async()=>{calls++;return{}},now,'invalid/zone');assert.equal(calls,0);assert.equal(a.todayCost,null)
 })
-test('rollover timezone change stale sample future sample old cache and account failure show unknown',()=>{
- const a=account();for(const [value,time,tz] of [[a,now+3*3600000,zone],[a,now,'Asia/Shanghai'],[{...a,todayUpdatedAt:new Date(now-61*60000).toISOString()},now,zone],[{...a,todayUpdatedAt:new Date(now+1000).toISOString()},now,zone],[{...a,todayDate:undefined},now,zone],[{...a,error:'offline'},now,zone],[{...a,todayUpdatedAt:'bad'},now,zone]])assert.equal(d.todayUsage(value,m.DEFAULT_CONFIG,time,tz),'今日用量：— / —')
+test('rollover timezone change future sample and unidentified old cache show unknown',()=>{
+ const a=account();for(const [value,time,tz] of [[a,now+3*3600000,zone],[a,now,'Asia/Shanghai'],[{...a,todayUpdatedAt:new Date(now+1000).toISOString()},now,zone],[{...a,todayDate:undefined},now,zone],[{...a,todayUpdatedAt:'bad'},now,zone]])assert.equal(d.todayUsage(value,m.DEFAULT_CONFIG,time,tz),'今日用量：— / —')
 })
-test('unknown zero expired stale or invalid weekly denominator keeps amount but never invents percent',()=>{
- for(const patch of [{estimatedTotalUSD:null},{estimatedTotalUSD:0},{estimatedTotalUSD:NaN},{costStatus:'unavailable'},{resetsAt:new Date(now).toISOString()},{updatedAt:new Date(now-61*60000).toISOString()}]){const a=account();Object.assign(a.windows[0],patch);assert.equal(d.todayUsage(a,m.DEFAULT_CONFIG,now,zone),'今日用量：— / $10.0')}
+test('unknown zero expired or invalid weekly denominator keeps amount but never invents percent',()=>{
+ for(const patch of [{estimatedTotalUSD:null},{estimatedTotalUSD:0},{estimatedTotalUSD:NaN},{costStatus:'unavailable'},{resetsAt:new Date(now).toISOString()},{updatedAt:new Date(now-8*86400000).toISOString()}]){const a=account();Object.assign(a.windows[0],patch);assert.equal(d.todayUsage(a,m.DEFAULT_CONFIG,now,zone),'今日用量：— / $10.0')}
  const a=account();a.todayCost=300;assert.equal(d.todayUsage(a,m.DEFAULT_CONFIG,now,zone),'今日用量：150% / $300.0')
 })
 test('cache whitelist preserves daily identity; legacy data without daily identity stays unknown',()=>{
  const a=account(),cached=m.validateCachedAccount({...a,rawStats:{secret:'NO'}});assert.equal(cached.todayDate,a.todayDate);assert.equal(cached.todayTimeZone,zone);assert.equal(cached.todayUpdatedAt,a.todayUpdatedAt);assert.equal(d.todayUsage(cached,m.DEFAULT_CONFIG,now,zone),'今日用量：5% / $10.0');assert.ok(!JSON.stringify(cached).includes('NO'))
  const legacy=m.validateCachedAccount({...a,todayDate:undefined});assert.equal(d.todayUsage(legacy,m.DEFAULT_CONFIG,now,zone),'今日用量：— / —')
 })
-test('account failure keeps original success timestamp and suppresses retained daily stats',async()=>{
- const a=account();const result=await c.loadAccounts({...m.DEFAULT_CONFIG,baseURL:'https://example.org',accountIDs:[1]},{kind:'apiKey',token:'TEST'},async()=>{throw Error('offline')},[a]);assert.equal(result.accounts[0].fetchedAt,a.fetchedAt);assert.equal(d.todayUsage(result.accounts[0],m.DEFAULT_CONFIG,now,zone),'今日用量：— / —');assert.equal(d.oldestSuccessfulRead(result.accounts),a.fetchedAt)
+test('account failure keeps original success timestamp and identifies valid daily fallback',async()=>{
+ const a=account();const result=await c.loadAccounts({...m.DEFAULT_CONFIG,baseURL:'https://example.org',accountIDs:[1]},{kind:'apiKey',token:'TEST'},async()=>{throw Error('offline')},[a]);assert.equal(result.accounts[0].fetchedAt,a.fetchedAt);assert.equal(d.todayUsage(result.accounts[0],m.DEFAULT_CONFIG,now,zone),'今日用量：5% / $10.0 · 旧快照');assert.equal(d.oldestSuccessfulRead(result.accounts),a.fetchedAt)
 })
 
 test('request crossing local midnight discards yesterday result instead of stamping it today',async()=>{

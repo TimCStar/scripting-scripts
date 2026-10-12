@@ -1,4 +1,4 @@
-import { safeText, money, isStale, localDay, nonnegative, type AccountView, type Window, type Config } from './model'
+import { safeText, money, validWeeklySample, validToday, sevenDayCostStart, nonnegative, type AccountView, type Window, type Config } from './model'
 /** Device-only aliases, never sent to Sub2API or used as account identifiers. */
 export function parseDisplayNames(text:string):Record<string,string> {
   let source:unknown
@@ -29,8 +29,8 @@ export function visibleWindows(account:AccountView,config:Config):Window[] {
 }
 
 export function windowDollars(window:Window,config:Config,now=Date.now()):string {
- if(window.costStatus!=='complete'||!window.resetsAt||Date.parse(window.resetsAt)<=now)return usageDollars(null,null)
- return usageDollars(window.usedUSD,isStale(window.updatedAt,config.staleMinutes,now)?null:window.estimatedTotalUSD)
+ if(window.costStatus!=='complete'||sevenDayCostStart(window,now)===null)return usageDollars(null,null)
+ return usageDollars(window.usedUSD,validWeeklySample(window,now)?window.estimatedTotalUSD:null)
 }
 
 /** Compact absolute timestamp in device local time, shared by reset and update labels. */
@@ -69,19 +69,18 @@ export function updateFooter(accounts:AccountView[]):string {
 
 /** Daily percent is today's local account cost / valid estimated weekly total. */
 export function todayUsage(account:AccountView,config:Config,now=Date.now(),timeZone?:string):string {
- const day=localDay(now,timeZone),sample=Date.parse(account.todayUpdatedAt||'')
- const valid=day&&account.todayDate===day.date&&account.todayTimeZone===day.timeZone&&Number.isFinite(sample)&&sample<=now&&localDay(sample,day.timeZone)?.date===day.date&&!isStale(account.todayUpdatedAt!,config.staleMinutes,now)&&!account.error
+ const valid=validToday(account,now,timeZone)
  const amount=valid?nonnegative(account.todayCost):null
  const w=account.windows.find(w=>w.label==='7d'),total=w?.estimatedTotalUSD
- const ratio=amount!==null&&w?.costStatus==='complete'&&w.resetsAt&&Date.parse(w.resetsAt)>now&&!isStale(w.updatedAt,config.staleMinutes,now)&&typeof total==='number'&&Number.isFinite(total)&&total>0?amount/total*100:null
+ const ratio=amount!==null&&w?.costStatus==='complete'&&validWeeklySample(w,now)&&typeof total==='number'&&Number.isFinite(total)&&total>0?amount/total*100:null
  const percent=ratio!==null&&Number.isFinite(ratio)?`${Math.round(ratio*10)/10}%`:'—'
- return `今日用量：${percent} / ${money(amount)}`
+ return `今日用量：${percent} / ${money(amount)}${valid&&(account.todayFallback||account.error||ratio!==null&&w?.costFallback)?' · 旧快照':''}`
 }
 
 /** Only a failed read falling back to previously read data is an old snapshot.
  * Sample age remains metadata; expired monetary windows stay independently guarded. */
 export function snapshotNote(account:AccountView,window:Window,now=Date.now()):string {
- if(account.error&&account.fetchedAt)return '旧快照'
+ if(account.error&&account.fetchedAt||window.costFallback)return '旧快照'
  return window.resetsAt&&Date.parse(window.resetsAt)<=now?'待更新':''
 }
 export function accountRequestStatus(account:AccountView,current=false):string {
@@ -89,4 +88,17 @@ export function accountRequestStatus(account:AccountView,current=false):string {
  if(account.error)return `${prefix}请求失败：${account.error}${account.fetchedAt?' · 旧快照':' · 暂无可用数据'}`
  if(account.requestErrors?.length)return `${prefix}部分请求失败：${account.requestErrors.join('；')}`
  return account.fetchedAt?`${prefix}请求成功`:'尚未请求'
+}
+
+/** Detailed reason lives in the existing request panel, without adding widget rows. */
+export function amountStatus(account:AccountView,now=Date.now()):string[] {
+ const today=validToday(account,now)
+ const lines=[`今日金额：${today?(account.todayFallback||account.error?'旧快照':'已读取'):(account.todayIssue==='request'?'请求失败，无有效当日缓存':account.todayIssue==='timezone'?'无法确认本机时区':account.todayIssue==='invalid'?'统计未提供有效金额':'当日数据待更新')} · ${resetTime(account.todayUpdatedAt)}`]
+ for(const w of account.windows.filter(w=>w.label==='7d')) {
+  const active=sevenDayCostStart(w,now)!==null
+  const status=!active?'窗口已过期或边界未知':w.costStatus==='complete'?(w.costFallback||account.error?'旧快照':'已读取'):w.costIssue==='request'?'请求失败，无有效同窗口缓存':w.costStatus==='truncated'?'边界记录超过读取上限':'统计或边界记录不完整'
+  const total=!active?'总额未知':!validWeeklySample(w,now)?'比例采样无法确认属于当前窗口':!w.estimatedTotalUSD?'费用或比例为零／缺失，无法估算':'总额为估算值'
+  lines.push(`7d 金额：${status} · ${resetTime(w.costUpdatedAt)}；${total}`)
+ }
+ return lines
 }

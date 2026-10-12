@@ -2,7 +2,7 @@ import {Section,Text,Button,VStack,useState,fetch,Widget} from 'scripting'
 import type {AccountView} from './model'
 import {readConfig,readCache,identity} from './state'
 import {refreshMonitor} from './refresh'
-import {accountRequestStatus,displayName,resetTime} from './display'
+import {accountRequestStatus,amountStatus,displayName,resetTime} from './display'
 
 let reading=false
 /** A request result, never a claim of a persistent/live network connection. */
@@ -44,6 +44,7 @@ export function ConnectionPanel(){
   {accounts.map(a=><VStack key={String(a.id)} alignment="leading" spacing={4}>
    <Text>{displayName(a,config.displayNames)} · #{a.id}</Text>
    <Text>{accountRequestStatus(a,current)}</Text>
+   {amountStatus(a).map((line,i)=><Text key={'amount'+i}>{line}</Text>)}
    <Text>上次成功读取账号：{resetTime(a.fetchedAt)}</Text>
    {a.windows.map((w,i)=><Text key={String(i)}>{w.label} 服务器采样：{resetTime(w.updatedAt)}</Text>)}
   </VStack>)}
