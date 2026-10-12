@@ -23,7 +23,7 @@ import {
   type Config,
   type Subscription,
 } from './model'
-import { categoryOptions } from './display-data'
+import { categoryOptions, paymentOptions } from './display-data'
 import { save } from './state'
 import { ClientError, errorMessage } from './client'
 import { palette } from './ui'
@@ -45,6 +45,7 @@ export function Editor({
     [message, setMessage] = useState(''),
     [lock] = useState(() => ({ busy: false })),
     dismiss = Navigation.useDismiss()
+  const [customPayment, setCustomPayment] = useState(false)
   const [tagsText, setTagsText] = useState((before?.tags || []).join(', ')),
     [reminderText, setReminderText] = useState(
       String(before?.reminderDays ?? -1),
@@ -320,12 +321,35 @@ export function Editor({
           </Text>
         }
       >
-        <TextField
+        <Picker
           title="支付方式"
-          prompt="可留空"
-          value={s.paymentMethod || ''}
-          onChanged={(v) => update('paymentMethod', v)}
-        />
+          value={
+            customPayment
+              ? '__renewlet_custom_payment__'
+              : s.paymentMethod || ''
+          }
+          onChanged={(v) => {
+            const custom = v === '__renewlet_custom_payment__'
+            setCustomPayment(custom)
+            update('paymentMethod', custom ? '' : String(v))
+          }}
+        >
+          <Text tag="">未填写</Text>
+          {paymentOptions(config, s.paymentMethod).map(([value, label]) => (
+            <Text key={value} tag={value}>
+              {label}
+            </Text>
+          ))}
+          <Text tag="__renewlet_custom_payment__">自定义…</Text>
+        </Picker>
+        {customPayment ? (
+          <TextField
+            title="自定义支付方式"
+            prompt="例如 招商银行 Visa"
+            value={s.paymentMethod || ''}
+            onChanged={(v) => update('paymentMethod', v)}
+          />
+        ) : null}
         <TextField
           title="网站"
           prompt="https://…"

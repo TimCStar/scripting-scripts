@@ -1,5 +1,9 @@
 import { VStack, HStack, Text, Image, SVG, Spacer, useState } from 'scripting'
-import { readRates, displayCategory } from './display-data'
+import {
+  readRates,
+  displayCategory,
+  displayPaymentMethod,
+} from './display-data'
 import { cnyLabel } from './presentation'
 import { readLogo, logoBackground } from './icons'
 import { readConfig, loadLogos } from './state'
@@ -103,6 +107,7 @@ function IconContent({
             code={logo.svg}
             resizable
             renderingMode="original"
+            widgetAccentedRenderingMode="fullColor"
             scaleToFit
             frame={{ width: size - 6, height: size - 6 }}
           />
@@ -111,6 +116,7 @@ function IconContent({
             image={logo.image}
             resizable
             renderingMode="original"
+            widgetAccentedRenderingMode="fullColor"
             scaleToFit
             frame={{ width: size - 6, height: size - 6 }}
           />
@@ -216,12 +222,14 @@ export function SubscriptionRow({
   dense = false,
   widget = false,
   iconSize,
+  metadata = false,
 }: {
   s: Subscription
   date: string
   dense?: boolean
   widget?: boolean
   iconSize?: number
+  metadata?: boolean
 }) {
   const d = dueFor(s, date)
   return (
@@ -268,6 +276,20 @@ export function SubscriptionRow({
             </Text>
           ) : null}
         </HStack>
+        {(!dense && s.paymentMethod) || metadata ? (
+          <Text
+            font={dense ? 9 : 11}
+            foregroundStyle={palette.muted}
+            lineLimit={1}
+          >
+            {[
+              dense ? displayCategory(readConfig(), s.category) : '',
+              displayPaymentMethod(readConfig(), s.paymentMethod),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </Text>
+        ) : null}
       </VStack>
       <VStack alignment="trailing" spacing={4}>
         <SubscriptionPrice

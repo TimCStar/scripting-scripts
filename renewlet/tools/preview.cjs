@@ -21,6 +21,7 @@ async function main() {
         price: '11',
         currency: 'GBP',
         category: 'cloud_storage',
+        paymentMethod: 'wechat',
       }
       s.subscriptions[1] = {
         ...s.subscriptions[1],
@@ -28,6 +29,7 @@ async function main() {
         price: '35.99',
         currency: 'TRY',
         category: 'streaming',
+        paymentMethod: 'credit_card',
       }
       const v = h.load('widget-view.tsx').WidgetView({
         snapshot: s,
@@ -54,6 +56,7 @@ async function main() {
     currency: 'GBP',
     price: '11',
     category: 'cloud_storage',
+    paymentMethod: 'alipay',
   }
   h.data.set('renewlet.demo.v1', pages)
   h.load('index.tsx')

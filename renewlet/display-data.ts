@@ -4,6 +4,8 @@ import { RenewletClient, type Credential, type Fetcher } from './client'
 import {
   categories,
   categoryLabel,
+  paymentMethods,
+  paymentLabel,
   parseCategories,
   parseRates,
   type Rates,
@@ -30,6 +32,26 @@ export function customCategories(c: Config): Record<string, string> {
 }
 export function displayCategory(c: Config, value: string) {
   return categoryLabel(value, customCategories(c))
+}
+export function customPaymentMethods(c: Config): Record<string, string> {
+  const cached = Storage.get<{ revision: string; paymentMethods?: unknown }>(
+    CATEGORY,
+  )
+  return cached?.revision === c.revision
+    ? parseCategories(cached.paymentMethods)
+    : {}
+}
+export function displayPaymentMethod(c: Config, value?: string) {
+  return paymentLabel(value, customPaymentMethods(c))
+}
+export function paymentOptions(c: Config, current = '') {
+  const labels: Record<string, string> = Object.assign(
+    Object.create(null),
+    paymentMethods,
+    customPaymentMethods(c),
+  )
+  if (current && !Object.hasOwn(labels, current)) labels[current] = current
+  return Object.entries(labels)
 }
 export function categoryOptions(c: Config, current: string) {
   const labels: Record<string, string> = Object.assign(
@@ -81,8 +103,17 @@ async function loadRates(c: Config) {
 }
 async function loadCategories(c: Config, auth: Credential | null) {
   if (c.mode !== 'session') return
-  const cached = Storage.get<{ revision: string; time: number }>(CATEGORY)
-  if (cached?.revision === c.revision && Date.now() - cached.time < TTL) return
+  const cached = Storage.get<{
+    revision: string
+    time: number
+    paymentMethods?: unknown
+  }>(CATEGORY)
+  if (
+    cached?.revision === c.revision &&
+    Array.isArray(cached.paymentMethods) &&
+    Date.now() - cached.time < TTL
+  )
+    return
   if (pendingCategories.has(c.revision))
     return pendingCategories.get(c.revision)
   const start = generation
@@ -92,12 +123,13 @@ async function loadCategories(c: Config, auth: Credential | null) {
         c.baseURL,
         auth,
         fetch as Fetcher,
-      ).categories()
+      ).displayConfig()
       if (start === generation)
         Storage.set(CATEGORY, {
           revision: c.revision,
           time: Date.now(),
-          values,
+          values: values.categories,
+          paymentMethods: values.paymentMethods,
         })
     } catch {
       /* Built-in Chinese labels remain available. */

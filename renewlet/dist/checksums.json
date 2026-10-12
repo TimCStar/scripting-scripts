@@ -1,12 +1,12 @@
 {
   "Renewlet.scripting": {
-    "sha256": "a7476544728def53ddc337289c4060c17cff72873eb87cb9fd5630bbc5552556",
-    "bytes": 63676,
+    "sha256": "017b041e825db49fa11d58cc6123ea607a486ff691a95609a96f5cda9ccf16c6",
+    "bytes": 66082,
     "files": 23
   },
   "Renewlet-source.zip": {
-    "sha256": "73be80e10c3e4a2ffa2d1e6235486739fe306f9fbe6b624af4e64b444a89afb8",
-    "bytes": 410389,
+    "sha256": "a1926fd8978d1a6c22a912f9e8491201b5dd37d1f605904d3e7347cd7d968880",
+    "bytes": 414723,
     "files": 40
   }
 }

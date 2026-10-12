@@ -31,7 +31,7 @@ import {
   type Config,
 } from './model'
 import { palette, SubscriptionRow, Overview } from './ui'
-import { displayCategory } from './display-data'
+import { displayCategory, displayPaymentMethod } from './display-data'
 import { Settings } from './settings'
 import { Detail } from './detail'
 import { Editor } from './editor'
@@ -119,7 +119,7 @@ export function Dashboard() {
           (filter === 'upcoming' && nextIDs.has(s.id)) ||
           (filter === 'overdue' && (dueFor(s, date)?.days ?? 0) < 0)) &&
         (!search ||
-          `${s.name} ${s.category} ${displayCategory(config, s.category)} ${s.tags.join(' ')} ${s.currency}`
+          `${s.name} ${s.category} ${displayCategory(config, s.category)} ${s.paymentMethod || ''} ${displayPaymentMethod(config, s.paymentMethod)} ${s.tags.join(' ')} ${s.currency}`
             .toLowerCase()
             .includes(search.toLowerCase())),
     ),
@@ -165,7 +165,7 @@ export function Dashboard() {
       <Section header={<Text>全部订阅</Text>}>
         <TextField
           title="搜索订阅"
-          prompt="名称、分类、币种"
+          prompt="名称、分类、支付方式、币种"
           value={search}
           onChanged={setSearch}
         />

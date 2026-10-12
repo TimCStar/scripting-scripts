@@ -31,7 +31,12 @@ import {
 } from './model'
 import { palette, SubscriptionIcon, SubscriptionPrice } from './ui'
 import { errorMessage } from './client'
-import { displayCategory, readRates } from './display-data'
+import {
+  displayCategory,
+  displayPaymentMethod,
+  readRates,
+} from './display-data'
+import { repeatReminderLabel } from './presentation'
 import { Editor } from './editor'
 function Field({ title, value }: { title: string; value: string }) {
   return (
@@ -185,7 +190,10 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
               title="自动计算日期"
               value={s.autoCalculateNextBillingDate ? '开启' : '关闭'}
             />
-            <Field title="支付方式" value={s.paymentMethod || '未填写'} />
+            <Field
+              title="支付方式"
+              value={displayPaymentMethod(config, s.paymentMethod) || '未填写'}
+            />
             <Field
               title="提醒"
               value={
@@ -196,14 +204,7 @@ export function Detail({ id, home }: { id: string; home?: () => any }) {
                     : `提前 ${s.reminderDays} 天`
               }
             />
-            <Field
-              title="重复提醒"
-              value={
-                s.repeatReminderEnabled
-                  ? `${s.repeatReminderInterval} / ${s.repeatReminderWindow}`
-                  : '关闭'
-              }
-            />
+            <Field title="重复提醒" value={repeatReminderLabel(s)} />
             <Field
               title="可见性"
               value={s.publicHidden ? '不公开' : '可公开'}

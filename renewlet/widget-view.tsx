@@ -1,4 +1,5 @@
 import { VStack, HStack, Text, Image, Spacer, Link, Script } from 'scripting'
+import { displayCategory, displayPaymentMethod } from './display-data'
 import {
   upcoming,
   dueFor,
@@ -22,9 +23,7 @@ export function widgetLimit(family: Family, height: number) {
   return family === 'systemSmall'
     ? 1
     : family === 'systemLarge'
-      ? height >= 370
-        ? 6
-        : 5
+      ? Math.max(1, Math.min(6, Math.floor((height - 114) / 52)))
       : 3
 }
 export function WidgetView({
@@ -146,7 +145,8 @@ export function WidgetView({
                 >
                   {next.subscription.name}
                 </Text>
-                <Text font={10} foregroundStyle={palette.muted} lineLimit={1}>
+                <Text font={9} foregroundStyle={palette.muted} lineLimit={1}>
+                  {displayCategory(config, next.subscription.category)} ·{' '}
                   {cycleLabel(next.subscription)}
                 </Text>
               </VStack>
@@ -165,7 +165,19 @@ export function WidgetView({
                 天
               </Text>
               <Spacer />
-              <VStack alignment="trailing" spacing={4}>
+              <VStack
+                alignment="trailing"
+                spacing={3}
+                frame={{ maxWidth: 'infinity', alignment: 'trailing' }}
+              >
+                {next.subscription.paymentMethod ? (
+                  <Text font={9} foregroundStyle={palette.muted} lineLimit={1}>
+                    {displayPaymentMethod(
+                      config,
+                      next.subscription.paymentMethod,
+                    )}
+                  </Text>
+                ) : null}
                 <Text
                   font={12}
                   fontWeight="medium"
@@ -229,8 +241,8 @@ export function WidgetView({
                   alignment="leading"
                   frame={{
                     maxWidth: 'infinity',
-                    minHeight: large ? 34 : mediumRowHeight,
-                    maxHeight: large ? 34 : mediumRowHeight,
+                    minHeight: large ? 46 : mediumRowHeight,
+                    maxHeight: large ? 46 : mediumRowHeight,
                     alignment: 'leading',
                   }}
                 >
@@ -239,6 +251,7 @@ export function WidgetView({
                     date={date}
                     dense
                     widget
+                    metadata={large || mediumRowHeight >= 44}
                     iconSize={large ? 28 : Math.min(34, mediumRowHeight - 2)}
                   />
                 </VStack>
